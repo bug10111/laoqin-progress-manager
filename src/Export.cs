@@ -14,24 +14,26 @@ using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 
 namespace LaoQin.ProgressManager {
- public class ChartPage {public DateTime Start;public int Days;public List<TaskItem> Tasks;}
+ public class ChartPage {public DateTime Start;public int Days;public List<TaskItem> Tasks;public bool DetailsOnly;public List<TaskLegendItem> LegendItems;}
  public static class Exporter {
-  public static List<ChartPage> Pages(List<TaskItem> tasks,DateTime start,DateTime end){
+  public static List<ChartPage> Pages(List<TaskItem> tasks,DateTime start,DateTime end,bool includeDetails=false){
    if(start>end)throw new InvalidOperationException("导出范围不正确。");int span=(end-start).Days+1;if(span>3660)throw new InvalidOperationException("导出范围超过十年，请缩小日期范围。");var pages=new List<ChartPage>();
    for(var date=start.Date;date<=end;date=date.AddDays(14)){
     int days=Math.Min(14,(end-date).Days+1);DateTime last=date.AddDays(days-1);var visible=tasks.Where(t=>Model.Parse(t.End)>=date&&Model.Parse(t.Start)<=last).ToList();
     if(visible.Count==0)continue;for(int j=0;j<visible.Count;j+=10)pages.Add(new ChartPage{Start=date,Days=days,Tasks=visible.Skip(j).Take(10).ToList()});if(pages.Count>300)throw new InvalidOperationException("导出超过 300 页，请缩小日期范围或任务范围。");
    }
-   if(pages.Count==0)throw new InvalidOperationException("这个日期范围内没有符合筛选条件的排期。");return pages;
+   if(pages.Count==0)throw new InvalidOperationException("这个日期范围内没有符合筛选条件的排期。");
+   if(includeDetails){var charts=pages.ToArray();foreach(var chart in charts){var items=chart.Tasks.Select((t,i)=>new TaskLegendItem{Number=i+1,Task=t}).ToList();for(int i=0;i<items.Count;i+=5)pages.Add(new ChartPage{Start=chart.Start,Days=chart.Days,DetailsOnly=true,LegendItems=items.Skip(i).Take(5).ToList()});}if(pages.Count>300)throw new InvalidOperationException("附加详情后导出超过 300 页，请缩小日期范围或任务范围。");}
+   return pages;
   }
   public static BitmapSource Bitmap(AppData d,string name,ChartPage page,int index,int count,double scale){
-   double width=1080,height=76+64+Math.Max(1,page.Tasks.Count)*62+38;var visual=new DrawingVisual();using(var c=visual.RenderOpen()){GanttView.Draw(c,d,page.Tasks,page.Start,page.Days,width,true,name,index,count);}
+   double width=1080,height=page.DetailsOnly?GanttView.DetailsPageHeight(page.LegendItems,width):GanttView.MeasureHeight(d,page.Tasks,page.Start,page.Days,width,true,false);var visual=new DrawingVisual();using(var c=visual.RenderOpen()){if(page.DetailsOnly)GanttView.DrawDetailsPage(c,d,name,page.Start,page.Days,index,count,page.LegendItems,width);else GanttView.Draw(c,d,page.Tasks,page.Start,page.Days,width,true,name,index,count);}
    var bitmap=new RenderTargetBitmap((int)(width*scale),(int)(height*scale),96*scale,96*scale,PixelFormats.Pbgra32);bitmap.Render(visual);bitmap.Freeze();return bitmap;
   }
   public static byte[] Image(BitmapSource source,bool jpeg){BitmapEncoder encoder=jpeg?(BitmapEncoder)new JpegBitmapEncoder{QualityLevel=94}:new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(source));using(var m=new MemoryStream()){encoder.Save(m);return m.ToArray();}}
   public static void Png(string path,AppData d,string project,List<ChartPage> pages){
    if(pages.Count==1){Store.SafeOutput(path,Image(Bitmap(d,project,pages[0],1,1,2),false));return;}
-   using(var m=new MemoryStream()){using(var zip=new ZipArchive(m,ZipArchiveMode.Create,true)){for(int i=0;i<pages.Count;i++){var entry=zip.CreateEntry("排期-"+(i+1).ToString("D3")+".png",CompressionLevel.Fastest);using(var f=entry.Open()){byte[] b=Image(Bitmap(d,project,pages[i],i+1,pages.Count,2),false);f.Write(b,0,b.Length);}}}Store.SafeOutput(path,m.ToArray());}
+   using(var m=new MemoryStream()){using(var zip=new ZipArchive(m,ZipArchiveMode.Create,true)){for(int i=0;i<pages.Count;i++){var entry=zip.CreateEntry((pages[i].DetailsOnly?"任务名称说明-":"排期-")+(i+1).ToString("D3")+".png",CompressionLevel.Fastest);using(var f=entry.Open()){byte[] b=Image(Bitmap(d,project,pages[i],i+1,pages.Count,2),false);f.Write(b,0,b.Length);}}}Store.SafeOutput(path,m.ToArray());}
   }
   static byte[] Ascii(string s){return Encoding.ASCII.GetBytes(s);}
   static void Write(Stream s,string text){byte[] b=Ascii(text);s.Write(b,0,b.Length);}

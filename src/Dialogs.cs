@@ -53,7 +53,7 @@ namespace LaoQin.ProgressManager {
   static UIElement ActivityContent(Change h){
    if(h.Kind=="需求追加")return Ui.Text(h.Detail,12);
    var panel=Ui.Stack();
-   string state=String.IsNullOrEmpty(h.Before)?h.After:(h.Before==h.After?"状态："+h.After:h.Before+"  →  "+h.After);var status=Ui.Text(state,12,h.After=="执行中"?Ui.Brand:Ui.Muted);status.Margin=new Thickness(0,5,0,0);panel.Children.Add(status);
+   if(h.Kind!="创建任务"){string state=String.IsNullOrEmpty(h.Before)?h.After:(h.Before==h.After?"状态："+h.After:h.Before+"  →  "+h.After);var status=Ui.Text(state,12,h.After=="执行中"?Ui.Brand:Ui.Muted);status.Margin=new Thickness(0,5,0,0);panel.Children.Add(status);}
    var details=Ui.Stack();if(!String.IsNullOrEmpty(h.PersonName))details.Children.Add(Ui.Text("负责人："+h.PersonName,11,Ui.Muted));if(Model.IsDate(h.Start))details.Children.Add(Ui.Text("计划："+h.Start+" — "+h.End,11,Ui.Muted));if(!String.IsNullOrEmpty(h.Detail))details.Children.Add(Ui.Text(h.Detail,11,Ui.Muted));if(details.Children.Count>0){details.Margin=new Thickness(0,5,0,0);panel.Children.Add(details);}
    return panel;
   }
