@@ -60,10 +60,5 @@ namespace LaoQin.ProgressManager {
    if(includeDetails&&legend.Count>0){double y=baseHeight+10;Text(c,"任务名称说明",label,y,14,Ui.Ink,width-label-30,true);y+=28;foreach(var item in legend){LegendDot(c,item.Number,label+11,y+10,9);var name=Paragraph(item.Task.Name,12,Ui.Ink,width-label-70,true);c.DrawText(name,new Point(label+31,y));y+=name.Height+10;}}
    return hits;
   }
-  public static double DetailsPageHeight(List<TaskLegendItem> items,double width){return 112+items.Sum(item=>Paragraph(item.Task.Name,13,Ui.Ink,width-90,true).Height+20);}
-  public static void DrawDetailsPage(DrawingContext c,AppData data,string project,DateTime start,int days,int page,int total,List<TaskLegendItem> items,double width){
-   double height=DetailsPageHeight(items,width);c.DrawRectangle(Brushes.White,null,new Rect(0,0,width,height));Text(c,"任务名称说明",28,20,21,Ui.Ink,width-140,true);Text(c,project+"    "+start.ToString("yyyy.MM.dd")+" — "+start.AddDays(days-1).ToString("yyyy.MM.dd"),28,55,12,Ui.Muted,width-100);Text(c,page+" / "+total,width-80,23,12,Ui.Muted,55);
-   double y=92;foreach(var item in items){LegendDot(c,item.Number,43,y+10,10);var name=Paragraph(item.Task.Name,13,Ui.Ink,width-90,true);c.DrawText(name,new Point(65,y));y+=name.Height+20;}
-  }
  }
 }
