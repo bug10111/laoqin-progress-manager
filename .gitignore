@@ -1,0 +1,17 @@
+/dist/
+/release/
+/qa/
+/data.json
+/data.json.bak
+/backups/
+/damaged-*.json
+/error.log
+/workspace.lock
+*.tmp
+*.pdb
+*.user
+*.suo
+.vs/
+.idea/
+Thumbs.db
+Desktop.ini

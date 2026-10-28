@@ -1,0 +1,70 @@
+﻿老秦进度管理软件 1.1.0 验证记录
+
+验证环境：Windows 10 Pro 22H2，.NET Framework 4.8。
+目标系统：Windows 10 / Windows 11，x86 / x64；Windows 11 尚未独立实机验证。
+
+53 项核心检查及 7 项界面检查全部通过。
+新增项目级任务、排期及时间线清理，最后一个项目删除，零项目重启、导入和重新建项目验证。
+PDF 单页与跨月多页、PNG、XML 及图片 ZIP 已验证。
+
+PASS: first-run sample and all local entities
+PASS: five initial bars
+PASS: single-writer lock prevents lost updates
+PASS: replace removes original bar but preserves task and dates
+PASS: replacement does not delete any task
+PASS: choosing pending task preserves its status
+PASS: multi-select applies inclusive dates and person to all chosen tasks
+PASS: original exit recorded in timeline
+PASS: selected tasks receive schedule history
+PASS: timestamps contain parseable offset and date-time
+PASS: reject reversed date range
+PASS: rejected transaction leaves memory and disk unchanged
+PASS: reject empty task selection
+PASS: reject unknown status
+PASS: unicode and XML-sensitive characters round-trip in JSON
+PASS: complete backup restore
+PASS: before and after status retained in timeline
+PASS: XML contains all tasks and complete timelines
+PASS: PDF file header
+PASS: high-resolution PNG
+PASS: pagination splits both dates and task rows
+PASS: restart reloads persisted edits
+PASS: excluded original remains excluded after restart
+PASS: recover corrupt primary from automatic backup
+PASS: damaged file preserved for recovery
+PASS: recovery preserves usable backup
+PASS: missing primary recovered without creating fresh data
+PASS: full import includes tasks across every project
+PASS: full import preserves historical people records
+PASS: full import preserves complete histories and active schedules
+PASS: full import retains active project
+PASS: import creates independent complete pre-import backup
+PASS: complete export-import round-trip preserves every serialized field
+PASS: invalid full import rejected
+PASS: invalid import leaves current data untouched
+PASS: legacy migration refuses a workspace still being edited
+PASS: legacy workspace migrated on first launch
+PASS: legacy migration leaves original data file untouched
+PASS: large full-data round-trip with 3000 tasks and timelines
+PASS: reject imported timeline with invalid timestamp
+PASS: project deletion cascades to every owned task
+PASS: project deletion preserves other project schedules and histories
+PASS: deleting current project selects a remaining project
+PASS: global shared people preserved after deleting a project
+PASS: deleted project and embedded data removed from current data file
+PASS: reject deleting nonexistent project
+PASS: last project can be deleted with no orphan tasks or active project
+PASS: last project task schedule and timeline removed from current file
+PASS: zero-project complete export remains a valid file
+PASS: empty workspace persists after restart without reseeding sample
+PASS: new project can be added after all projects are removed
+PASS: complete import accepts zero-project workspace
+PASS: zero-project schema rejects orphan tasks
+
+PASS: Native WPF layout rendered at normal and minimum sizes.
+PASS: Task and status multiselect connected; all 16 tasks selected across multiple statuses.
+PASS: Schedule form save button replaced original bar and scheduled selected tasks.
+PASS: Task editor save button persisted edited task name.
+PASS: Timeline, task editor, schedule editor and full-data dialogs rendered.
+PASS: Zero-project workspace renders both task and Gantt views.
+PASS: Empty-workspace new-project button saves a usable project.
