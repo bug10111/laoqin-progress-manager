@@ -9,17 +9,17 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public class BarHit {public Rect Rect;public TaskItem Task;}
  public class GanttView:FrameworkElement {
   public AppData Data;public List<TaskItem> Tasks;public DateTime Start;public int Days;public bool GroupPeople=true;public Action<string> TaskClicked;
   List<BarHit> hits=new List<BarHit>();
   public GanttView(AppData data,List<TaskItem> tasks,DateTime start,int days,bool group){Data=data;Tasks=tasks;Start=start.Date;Days=days;GroupPeople=group;Height=64+Math.Max(tasks.Count,4)*62+38;MinWidth=166+days*33;VerticalAlignment=VerticalAlignment.Top;SnapsToDevicePixels=true;MouseLeftButtonUp+=Clicked;MouseMove+=Moved;}
   public List<TaskItem> Ordered(){return Order(Data,Tasks,GroupPeople);}
-  public static List<TaskItem> Order(AppData d,IEnumerable<TaskItem> tasks,bool people){return people?tasks.OrderBy(t=>Model.PersonName(d,t.PersonId)).ThenBy(t=>t.Start).ThenBy(t=>t.Name).ToList():tasks.OrderBy(t=>t.Start).ThenBy(t=>t.Name).ToList();}
+  public static List<TaskItem> Order(AppData d,IEnumerable<TaskItem> tasks,bool people){return people?tasks.OrderBy(t=>Model.PersonName(d,t.PersonId)).ThenBy(t=>Model.TaskPrefix(t.Name)).ThenBy(t=>t.Start).ThenBy(t=>t.Name).ToList():tasks.OrderBy(t=>Model.TaskPrefix(t.Name)).ThenBy(t=>t.Start).ThenBy(t=>t.Name).ToList();}
   protected override void OnRender(DrawingContext c){base.OnRender(c);hits=Draw(c,Data,Ordered(),Start,Days,ActualWidth,false,"",1,1,GroupPeople);}
   void Clicked(object s,MouseButtonEventArgs e){var hit=hits.FirstOrDefault(x=>x.Rect.Contains(e.GetPosition(this)));if(hit!=null&&TaskClicked!=null)TaskClicked(hit.Task.Id);}
-  void Moved(object s,MouseEventArgs e){var h=hits.FirstOrDefault(x=>x.Rect.Contains(e.GetPosition(this)));Cursor=h==null?Cursors.Arrow:Cursors.Hand;ToolTip=h==null?null:h.Task.Name+"\n"+Model.PersonName(Data,h.Task.PersonId)+" · "+h.Task.Status+"\n"+Model.Range(h.Task)+"\n点击编辑：多选现有任务并替换当前甘特条";}
+  void Moved(object s,MouseEventArgs e){var h=hits.FirstOrDefault(x=>x.Rect.Contains(e.GetPosition(this)));Cursor=h==null?Cursors.Arrow:Cursors.Hand;if(h==null){ToolTip=null;return;}string note=h.Task.Note??"";if(note.Length>240)note=note.Substring(0,240)+"…";string tip=h.Task.Name+"\n负责人："+Model.PersonName(Data,h.Task.PersonId)+"\n计划："+Model.Range(h.Task)+"\n状态："+h.Task.Status;if(note.Length>0)tip+="\n说明："+note;ToolTip=tip+"\n点击编辑排期";}
   static void Text(DrawingContext c,string text,double x,double y,double size,Brush brush,double maxWidth,bool bold=false){
    if(maxWidth<=0)return;var f=new FormattedText(text??"",CultureInfo.GetCultureInfo("zh-CN"),FlowDirection.LeftToRight,new Typeface(new FontFamily("Microsoft YaHei UI"),FontStyles.Normal,bold?FontWeights.SemiBold:FontWeights.Normal,FontStretches.Normal),size,brush);f.MaxTextWidth=Math.Max(1,maxWidth);f.MaxLineCount=1;f.Trimming=TextTrimming.CharacterEllipsis;c.DrawText(f,new Point(x,y));
   }

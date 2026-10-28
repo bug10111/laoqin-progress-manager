@@ -7,7 +7,7 @@ using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public sealed class Store : IDisposable {
   public AppData Data {get;private set;}
   public string DirectoryPath {get;private set;}

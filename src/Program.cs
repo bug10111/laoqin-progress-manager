@@ -13,10 +13,10 @@ using System.Reflection;
 [assembly:AssemblyProduct("老秦进度管理软件")]
 [assembly:AssemblyCompany("老秦")]
 [assembly:AssemblyCopyright("Copyright 2026 老秦进度管理软件贡献者")]
-[assembly:AssemblyVersion("1.1.0.0")]
-[assembly:AssemblyFileVersion("1.1.0.0")]
+[assembly:AssemblyVersion("1.1.2.0")]
+[assembly:AssemblyFileVersion("1.1.2.0")]
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public static class Program {
   [STAThread] public static int Main(string[] args){
    Thread.CurrentThread.CurrentCulture=CultureInfo.GetCultureInfo("zh-CN");Thread.CurrentThread.CurrentUICulture=CultureInfo.GetCultureInfo("zh-CN");

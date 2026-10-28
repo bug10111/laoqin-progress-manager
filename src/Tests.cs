@@ -8,7 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Xml.Linq;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public static class Tests {
   static List<string> passed=new List<string>();
   static void Check(bool value,string name){if(!value)throw new Exception("FAIL: "+name);passed.Add("PASS: "+name);}

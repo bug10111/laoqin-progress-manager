@@ -7,7 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  [DataContract] public class Project { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Example; }
  [DataContract] public class Person { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Deleted; }
  [DataContract] public class Change {
@@ -27,7 +27,8 @@ namespace Xucheng {
   [DataMember] public string CurrentProjectId;
  }
  public static class Model {
-  public static readonly string[] Statuses = { "待讨论", "待执行", "执行中", "已完成", "已暂停" };
+  public static readonly string[] Statuses = { "执行中", "待执行", "待讨论", "已完成", "已暂停", "已关闭" };
+  public static string TaskPrefix(string name) { if(String.IsNullOrEmpty(name)||name[0]!='【')return "";int end=name.IndexOf('】');return end>1?name.Substring(0,end+1):""; }
   public static string Id() { return Guid.NewGuid().ToString("N"); }
   public static string Date(DateTime d) { return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); }
   public static DateTime Parse(string d) { return DateTime.ParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture); }

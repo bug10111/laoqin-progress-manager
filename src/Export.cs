@@ -13,7 +13,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public class ChartPage {public DateTime Start;public int Days;public List<TaskItem> Tasks;}
  public static class Exporter {
   public static List<ChartPage> Pages(List<TaskItem> tasks,DateTime start,DateTime end){

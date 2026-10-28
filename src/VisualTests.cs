@@ -11,7 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Controls;
 using System.Windows.Threading;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  internal static class VisualTests {
   static IEnumerable<T> Children<T>(DependencyObject root)where T:DependencyObject{for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var c=VisualTreeHelper.GetChild(root,i);if(c is T)yield return (T)c;foreach(var d in Children<T>(c))yield return d;}}
   static void Save(FrameworkElement el,string path,bool arrange=false){if(arrange){el.Measure(new Size(360,Double.PositiveInfinity));el.Arrange(new Rect(new Point(0,0),el.DesiredSize));}el.UpdateLayout();if(el.ActualWidth<1||el.ActualHeight<1)throw new Exception("Empty layout: "+path);var visual=new DrawingVisual();using(var dc=visual.RenderOpen()){dc.DrawRectangle(Brushes.White,null,new Rect(0,0,el.ActualWidth,el.ActualHeight));dc.DrawRectangle(new VisualBrush(el){Stretch=Stretch.None,AlignmentX=AlignmentX.Left,AlignmentY=AlignmentY.Top},null,new Rect(0,0,el.ActualWidth,el.ActualHeight));}var b=new RenderTargetBitmap((int)Math.Ceiling(el.ActualWidth),(int)Math.Ceiling(el.ActualHeight),96,96,PixelFormats.Pbgra32);b.Render(visual);Store.SafeOutput(path,Exporter.Image(b,false));}

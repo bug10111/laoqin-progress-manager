@@ -12,7 +12,7 @@ using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Automation;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public static class Ui {
   internal static Action<Window> TestDialogReady;
   public static Brush Ink=B("#202B40"),Muted=B("#7B8597"),Line=B("#E8ECF3"),Brand=B("#4D65E6"),BrandSoft=B("#EDF0FF"),Bg=B("#F7F8FC"),Side=B("#F0F3F9");

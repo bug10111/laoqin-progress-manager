@@ -11,8 +11,9 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public static partial class Dialogs {
+  static string lastTaskStatus="待讨论",lastTaskPersonId="";
   public static DateTime? DateValue(DatePicker p){if(String.IsNullOrWhiteSpace(p.Text))return null;DateTime d;if(!DateTime.TryParse(p.Text,CultureInfo.CurrentCulture,DateTimeStyles.None,out d))throw new InvalidOperationException("日期格式不正确，请从日历选择日期。");return d.Date;}
   public static DatePicker DateBox(string date){var p=new DatePicker{SelectedDate=Model.IsDate(date)?(DateTime?)Model.Parse(date):null,MinHeight=36};p.DateValidationError+=(s,e)=>{e.ThrowException=false;};return p;}
   static void Footer(Panel p,Window w,Action save,string label="保存变更") {var row=Ui.Stack(true);row.Margin=new Thickness(0,22,0,0);row.HorizontalAlignment=HorizontalAlignment.Right;var cancel=Ui.Button("取消",()=>w.Close());cancel.Margin=new Thickness(0,0,8,0);row.Children.Add(cancel);row.Children.Add(Ui.Button(label,save,true));p.Children.Add(row);}
@@ -20,11 +21,11 @@ namespace Xucheng {
   public static bool TaskEditor(Window owner,Store store,string id){
    if(!store.Data.Projects.Any(x=>x.Id==store.Data.CurrentProjectId)){MessageBox.Show(owner,"请先创建项目，再新建任务。","老秦进度管理软件");return false;}
    var original=store.Data.Tasks.FirstOrDefault(t=>t.Id==id);var w=Ui.Dialog(owner,original==null?"新建任务":"编辑任务",500);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text(original==null?"新建任务":"编辑任务",21,null,true));p.Children.Add(Ui.Text("执行中的任务须填写负责人和完整时间范围。",12,Ui.Muted));
-   var name=new TextBox{Text=original==null?"":original.Name,MaxLength=500};Ui.Label(p,"任务名称",name);
-   var status=new ComboBox{ItemsSource=Model.Statuses,SelectedItem=original==null?"待讨论":original.Status};Ui.Label(p,"任务状态",status);
-   var person=new EntityPicker(store,w,false,original==null?"":original.PersonId,null);Ui.Label(p,"负责人",person);
+   var name=new TextBox{Text=original==null?"":original.Name,MaxLength=500};Ui.Label(p,"任务名称",name);var titleHint=Ui.Text("用短标题概括工作；同一模块可用相同前缀（如【充值】）；完整原文和验收要求放在任务说明。",11,Ui.Muted);titleHint.Margin=new Thickness(0,5,0,0);p.Children.Add(titleHint);
+   string defaultStatus=original==null?(Model.Statuses.Contains(lastTaskStatus)?lastTaskStatus:"待讨论"):original.Status;var status=new ComboBox{ItemsSource=Model.Statuses,SelectedItem=defaultStatus};Ui.Label(p,"任务状态",status);
+   string defaultPerson=original==null?(store.Data.People.Any(x=>x.Id==lastTaskPersonId&&!x.Deleted)?lastTaskPersonId:""):original.PersonId;var person=new EntityPicker(store,w,false,defaultPerson,null);Ui.Label(p,"负责人",person);
    var start=DateBox(original==null?"":original.Start);var end=DateBox(original==null?"":original.End);Ui.Label(p,"计划时间 · 起止日期（包含结束当天）",DatePair(start,end));
-   var note=new TextBox{Text=original==null?"":original.Note,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=78,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxLength=50000};Ui.Label(p,"任务说明",note);
+   var note=new TextBox{Text=original==null?"":original.Note,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=78,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxLength=50000};Ui.Label(p,"任务说明 · 完整内容与验收说明",note);
    var hint=Ui.Text("状态变化、任务修改和排期变化都会记录操作时间。",11,Ui.Muted);hint.Margin=new Thickness(0,13,0,0);p.Children.Add(hint);
    Footer(p,w,()=>{
     string n=name.Text.Trim(),s=(string)status.SelectedItem,personId=person.SelectedId;var a=DateValue(start);var b=DateValue(end);
@@ -33,7 +34,7 @@ namespace Xucheng {
     store.Commit(d=>{var t=d.Tasks.FirstOrDefault(x=>x.Id==id);bool created=t==null;if(created){t=new TaskItem{Id=Model.Id(),ProjectId=d.CurrentProjectId,History=new List<Change>()};d.Tasks.Add(t);}string before=t.Status,oldName=t.Name,oldRange=created?"":Model.Range(t),oldPerson=t.PersonId;bool wasIn=t.InGantt;t.Name=n;t.Status=s;t.PersonId=personId??"";t.Start=a.HasValue?Model.Date(a.Value):"";t.End=b.HasValue?Model.Date(b.Value):"";t.Note=note.Text.Trim();if(s=="执行中"&&(created||before!="执行中"))t.InGantt=true;if(!a.HasValue||String.IsNullOrEmpty(t.PersonId))t.InGantt=false;
      if(created||before!=s)Model.Record(d,t,created?"创建任务":"状态变更",before,created?"":"每次状态变更自动记录。");
      else if(oldName!=t.Name||oldRange!=Model.Range(t)||oldPerson!=t.PersonId||original.Note!=t.Note||wasIn!=t.InGantt)Model.Record(d,t,"任务修改",before,"原任务名称："+oldName+"；原计划："+oldRange+"。");
-    });w.DialogResult=true;
+    });lastTaskStatus=s;lastTaskPersonId=personId??"";w.DialogResult=true;
    },original==null?"创建任务":"保存变更");
    w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return w.ShowDialog()==true;
   }

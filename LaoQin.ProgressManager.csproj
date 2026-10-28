@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{DAD8C797-5E12-4E41-94E7-C36E85A1B42E}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>LaoQin.ProgressManager</RootNamespace>
+    <AssemblyName>LaoQinProgressManager</AssemblyName>
+    <StartupObject>LaoQin.ProgressManager.Program</StartupObject>
+    <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <OutputPath>dist\</OutputPath>
+    <Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <RuntimeFrameworkDir>$(SystemRoot)\Microsoft.NET\Framework\v4.0.30319</RuntimeFrameworkDir>
+    <UseRuntimeFrameworkReferences Condition="!Exists('$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.6\mscorlib.dll')">true</UseRuntimeFrameworkReferences>
+    <!-- The script and this fallback both support an offline build on plain Windows. -->
+    <_TargetFrameworkDirectories Condition="'$(UseRuntimeFrameworkReferences)' == 'true'">$(RuntimeFrameworkDir)</_TargetFrameworkDirectories>
+    <_FullFrameworkReferenceAssemblyPaths Condition="'$(UseRuntimeFrameworkReferences)' == 'true'">$(RuntimeFrameworkDir)</_FullFrameworkReferenceAssemblyPaths>
+    <TargetFrameworkDirectory Condition="'$(UseRuntimeFrameworkReferences)' == 'true'">$(RuntimeFrameworkDir)</TargetFrameworkDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase"><HintPath>$(RuntimeFrameworkDir)\WPF\WindowsBase.dll</HintPath></Reference>
+    <Reference Include="PresentationCore"><HintPath>$(RuntimeFrameworkDir)\WPF\PresentationCore.dll</HintPath></Reference>
+    <Reference Include="PresentationFramework"><HintPath>$(RuntimeFrameworkDir)\WPF\PresentationFramework.dll</HintPath></Reference>
+    <Compile Include="src\*.cs" />
+    <None Include="app.manifest" />
+    <None Include="app.ico" />
+    <None Include="README.md" />
+    <None Include="LICENSE" />
+    <None Include="NOTICE" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

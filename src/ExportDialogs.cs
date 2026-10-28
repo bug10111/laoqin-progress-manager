@@ -12,7 +12,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 
-namespace Xucheng {
+namespace LaoQin.ProgressManager {
  public static partial class Dialogs {
   static string FileName(string text){return String.Join("_",text.Split(Path.GetInvalidFileNameChars()));}
   public static void Export(Window owner,Store store,List<TaskItem> tasks,DateTime viewStart,DateTime viewEnd){
