@@ -40,24 +40,24 @@ namespace LaoQin.ProgressManager {
    },original==null?"创建任务":"保存变更");
    w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return w.ShowDialog()==true;
   }
-  static string HistoryTime(Change h){DateTimeOffset at;return DateTimeOffset.TryParse(h.At,out at)?at.LocalDateTime.ToString("yyyy-MM-dd HH:mm"):h.At;}
   static Border InfoTile(string caption,string value){var panel=Ui.Stack();panel.Children.Add(Ui.Text(caption,11,Ui.Muted));var text=Ui.Text(value,13,null,true);text.Margin=new Thickness(0,5,0,0);panel.Children.Add(text);var tile=Ui.Card(panel,13);tile.Background=Ui.Bg;tile.BorderThickness=new Thickness(0);tile.Margin=new Thickness(0,0,8,8);return tile;}
-  static UIElement RequirementEntry(string label,string timestamp,string content,bool original){
+  static UIElement TimelineEntry(string label,string timestamp,UIElement content,bool original,bool last){
    var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(22)});row.ColumnDefinitions.Add(new ColumnDefinition());
    row.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});row.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
    var dot=new Border{Width=10,Height=10,CornerRadius=new CornerRadius(5),Background=original?Ui.Muted:Ui.Brand,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,5,0,0)};Grid.SetColumn(dot,0);Grid.SetRow(dot,0);row.Children.Add(dot);
    var time=Ui.Text(timestamp,11,Ui.Muted);Grid.SetColumn(time,1);Grid.SetRow(time,0);row.Children.Add(time);
-   var line=new Border{Width=2,Background=Ui.Line,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Stretch,Margin=new Thickness(0,0,0,-8)};Grid.SetColumn(line,0);Grid.SetRow(line,1);row.Children.Add(line);
-   var cardContent=Ui.Stack();var titleRow=Ui.Stack(true);var tag=new Border{Child=Ui.Text(label,11,original?Ui.Muted:Ui.Brand,true),Background=original?Ui.Side:Ui.BrandSoft,CornerRadius=new CornerRadius(4),Padding=new Thickness(7,3,7,3)};titleRow.Children.Add(tag);cardContent.Children.Add(titleRow);var body=Ui.Text(content,12);body.Margin=new Thickness(0,10,0,0);cardContent.Children.Add(body);
+   if(!last){var line=new Border{Width=2,Background=Ui.Line,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Stretch,Margin=new Thickness(0,0,0,-19)};Grid.SetColumn(line,0);Grid.SetRow(line,1);row.Children.Add(line);}
+   var cardContent=Ui.Stack();var tag=new Border{Child=Ui.Text(label,11,original?Ui.Muted:Ui.Brand,true),Background=original?Ui.Side:Ui.BrandSoft,CornerRadius=new CornerRadius(4),Padding=new Thickness(7,3,7,3),HorizontalAlignment=HorizontalAlignment.Left};cardContent.Children.Add(tag);var body=new Border{Child=content,Margin=new Thickness(0,10,0,0)};cardContent.Children.Add(body);
    var card=Ui.Card(cardContent,14);card.Margin=new Thickness(0,8,0,14);Grid.SetColumn(card,1);Grid.SetRow(card,1);row.Children.Add(card);return row;
   }
-  static UIElement ActivityEntry(Change h){
-   var panel=Ui.Stack();panel.Margin=new Thickness(0,0,0,10);var header=Ui.Stack(true);var kind=Ui.Text(h.Kind,12,null,true);header.Children.Add(kind);var time=Ui.Text("  ·  "+HistoryTime(h),11,Ui.Muted);header.Children.Add(time);panel.Children.Add(header);
+  static UIElement ActivityContent(Change h){
+   if(h.Kind=="需求追加")return Ui.Text(h.Detail,12);
+   var panel=Ui.Stack();
    string state=String.IsNullOrEmpty(h.Before)?h.After:(h.Before==h.After?"状态："+h.After:h.Before+"  →  "+h.After);var status=Ui.Text(state,12,h.After=="执行中"?Ui.Brand:Ui.Muted);status.Margin=new Thickness(0,5,0,0);panel.Children.Add(status);
    var details=Ui.Stack();if(!String.IsNullOrEmpty(h.PersonName))details.Children.Add(Ui.Text("负责人："+h.PersonName,11,Ui.Muted));if(Model.IsDate(h.Start))details.Children.Add(Ui.Text("计划："+h.Start+" — "+h.End,11,Ui.Muted));if(!String.IsNullOrEmpty(h.Detail))details.Children.Add(Ui.Text(h.Detail,11,Ui.Muted));if(details.Children.Count>0){details.Margin=new Thickness(0,5,0,0);panel.Children.Add(details);}
-   var card=Ui.Card(panel,13);card.Margin=new Thickness(0,0,0,9);return card;
+   return panel;
   }
-  static bool AppendRequirement(Window owner,Store store,string id){
+  internal static bool AppendRequirement(Window owner,Store store,string id){
    var task=store.Data.Tasks.FirstOrDefault(x=>x.Id==id);if(task==null)return false;
    var w=Ui.Dialog(owner,"追加需求",520);var p=Ui.Stack();p.Margin=new Thickness(24);
    p.Children.Add(Ui.Text("追加需求",21,null,true));var intro=Ui.Text("原始详情会保留不变。新内容将以当前时间追加到任务时间线。",12,Ui.Muted);intro.Margin=new Thickness(0,6,0,4);p.Children.Add(intro);
@@ -78,13 +78,10 @@ namespace LaoQin.ProgressManager {
    actions.Children.Add(Ui.Button("关闭",()=>w.Close()));Grid.SetColumn(actions,1);footer.Children.Add(actions);main.Children.Add(footer);
    var content=Ui.Stack();var heading=Ui.Stack();heading.Children.Add(Ui.Text("任务详情",12,Ui.Muted));var title=Ui.Text(t.Name,24,null,true);title.Margin=new Thickness(0,10,0,12);heading.Children.Add(title);var statusRow=Ui.Stack(true);statusRow.Children.Add(Ui.Badge(t.Status));var project=store.Data.Projects.FirstOrDefault(x=>x.Id==t.ProjectId);var projectLabel=Ui.Text(project==null?"项目已删除":project.Name,12,Ui.Muted);projectLabel.Margin=new Thickness(10,0,0,0);statusRow.Children.Add(projectLabel);heading.Children.Add(statusRow);var hero=Ui.Card(heading,20);hero.Margin=new Thickness(0,0,0,16);content.Children.Add(hero);
    var tiles=new Grid();tiles.ColumnDefinitions.Add(new ColumnDefinition());tiles.ColumnDefinitions.Add(new ColumnDefinition());tiles.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});tiles.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});var personTile=InfoTile("负责人",Model.PersonName(store.Data,t.PersonId));Grid.SetColumn(personTile,0);Grid.SetRow(personTile,0);tiles.Children.Add(personTile);var dateTile=InfoTile("计划时间",Model.Range(t));Grid.SetColumn(dateTile,1);Grid.SetRow(dateTile,0);tiles.Children.Add(dateTile);var ganttTile=InfoTile("甘特图",t.InGantt?"已纳入当前排期":"未纳入当前排期");Grid.SetColumn(ganttTile,0);Grid.SetRow(ganttTile,1);tiles.Children.Add(ganttTile);var projectTile=InfoTile("所属项目",project==null?"项目已删除":project.Name);Grid.SetColumn(projectTile,1);Grid.SetRow(projectTile,1);tiles.Children.Add(projectTile);content.Children.Add(tiles);
-   var additions=t.History.Where(h=>h.Kind=="需求追加").Reverse().ToList();int requirementCount=additions.Count+(String.IsNullOrWhiteSpace(t.Note)?0:1);
-   var reqHeading=Ui.Stack(true);var reqTitle=Ui.Text("需求详情",16,null,true);reqHeading.Children.Add(reqTitle);var reqCount=Ui.Text("  "+requirementCount+" 条",11,Ui.Muted);reqCount.Margin=new Thickness(4,3,0,0);reqHeading.Children.Add(reqCount);reqHeading.Margin=new Thickness(0,14,0,10);content.Children.Add(reqHeading);
-   if(!String.IsNullOrWhiteSpace(t.Note)){var created=t.History.LastOrDefault(h=>h.Kind=="创建任务");content.Children.Add(RequirementEntry("初始详情",created==null?"原始需求":HistoryTime(created),t.Note,true));}
-   int number=0;foreach(var h in additions){number++;content.Children.Add(RequirementEntry("补充 "+number,HistoryTime(h),h.Detail,false));}
-   if(requirementCount==0){var empty=Ui.Card(Ui.Text("尚无详情，可通过“追加需求”记录新的补充内容。",12,Ui.Muted),15);empty.Background=Ui.Bg;empty.BorderThickness=new Thickness(0);content.Children.Add(empty);}
-   var history=t.History.Where(h=>h.Kind!="需求追加").Reverse().ToList();var activityHeading=Ui.Text("状态与操作时间线 · "+history.Count+" 条",16,null,true);activityHeading.Margin=new Thickness(0,19,0,10);content.Children.Add(activityHeading);
-   if(history.Count==0)content.Children.Add(Ui.Card(Ui.Text("暂无操作记录。",12,Ui.Muted),14));foreach(var h in history)content.Children.Add(ActivityEntry(h));
+   var history=Model.Timeline(t);var created=history.FirstOrDefault(h=>h.Kind=="创建任务");bool legacyNote=created==null&&!String.IsNullOrWhiteSpace(t.Note);var timelineHeading=Ui.Text("任务时间线 · "+(history.Count+(legacyNote?1:0))+" 条",16,null,true);timelineHeading.Margin=new Thickness(0,14,0,10);content.Children.Add(timelineHeading);
+   if(legacyNote)content.Children.Add(TimelineEntry("初始详情","创建时间未记录",Ui.Text(t.Note,12),true,history.Count==0));
+   if(history.Count==0&&!legacyNote)content.Children.Add(Ui.Card(Ui.Text("暂无时间线记录，可通过“追加需求”记录新的补充内容。",12,Ui.Muted),14));
+   for(int i=0;i<history.Count;i++){var h=history[i];var entry=Ui.Stack();if(h==created&&!String.IsNullOrWhiteSpace(t.Note)){entry.Children.Add(Ui.Text(t.Note,12));var details=new Border{Child=ActivityContent(h),Margin=new Thickness(0,10,0,0)};entry.Children.Add(details);}else entry.Children.Add(ActivityContent(h));content.Children.Add(TimelineEntry(h.Kind,Model.HistoryTime(h),entry,h.Kind=="创建任务",i==history.Count-1));}
    main.Children.Add(new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});w.Content=main;w.ShowDialog();
   }  public class ScheduleResult {public DateTime Start;public HashSet<string> Statuses;}
   public static ScheduleResult Schedule(Window owner,Store store,string originalId){
