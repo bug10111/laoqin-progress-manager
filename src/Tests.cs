@@ -29,11 +29,17 @@ namespace LaoQin.ProgressManager {
    Check(priorityTarget.Priority=="P2","rescheduling preserves priority by default");
    Fails(()=>{var invalid=Store.Decode(Store.Encode(priorityData));invalid.Tasks[0].Priority="P4";Model.Check(invalid);},"reject priority outside P0 to P3");
    var timelineData=Model.Sample();var timelineTask=timelineData.Tasks[0];timelineTask.Note="";timelineTask.History.Clear();Model.Record(timelineData,timelineTask,"创建任务","","");timelineTask.History[0].At="2026-10-20T09:00:00+08:00";
+   Check(!Model.HasInitialDetails(timelineTask)&&Model.TimelineNodeCount(timelineTask)==1,"无初始详情的任务仍统计创建节点");
    Model.Record(timelineData,timelineTask,"需求追加",timelineTask.Status,"核实是否通过，进度如何");timelineTask.History[0].At="2026-10-21T11:00:00+08:00";
    Model.Record(timelineData,timelineTask,"状态变更","待执行","");timelineTask.History[0].At="2026-10-21T02:00:00+00:00";
    var chronological=Model.Timeline(timelineTask);Check(chronological.Select(h=>h.Kind).SequenceEqual(new[]{"创建任务","状态变更","需求追加"}),"timeline orders creation, status and requirement records by timestamp including offsets");
    Check(chronological[0].Kind=="创建任务"&&String.IsNullOrEmpty(timelineTask.Note),"creation remains in timeline without an initial requirement");
    var restoredTimeline=Store.Decode(Store.Encode(timelineData)).Tasks[0];Check(Model.Timeline(restoredTimeline).Last().Detail=="核实是否通过，进度如何"&&restoredTimeline.History.Count==3,"combined timeline preserves original and appended records through JSON round-trip");
+   Check(!Model.HasInitialDetails(restoredTimeline)&&Model.TimelineNodeCount(restoredTimeline)==3,"追加需求与状态变更计入节点，且不改变初始详情标记");
+   var legacyDetails=new TaskItem{Note="旧版初始详情"};Check(Model.HasInitialDetails(legacyDetails)&&Model.TimelineNodeCount(legacyDetails)==1,"旧版任务无创建记录时统计独立的初始详情节点");
+   Model.Record(timelineData,legacyDetails,"需求追加","","后续补充");Check(Model.TimelineNodeCount(legacyDetails)==2,"旧版初始详情与追加记录均计入节点");
+   Model.Record(timelineData,legacyDetails,"创建任务","","");Check(Model.TimelineNodeCount(legacyDetails)==2,"初始详情合入创建节点后不重复计数");
+   Check(!Model.HasInitialDetails(new TaskItem{Note=" \r\n "})&&Model.TimelineNodeCount(new TaskItem())==0,"空白详情与空历史分别显示无详情和零节点");
    using(var s=new Store(data)){
     Check(s.Data.Tasks.Count==16,"first-run sample and all local entities");Check(s.Data.Tasks.Count(t=>t.InGantt)==5,"five initial bars");
     originalId=s.Data.Tasks[0].Id;chosenId=s.Data.Tasks[1].Id;pendingId=s.Data.Tasks[5].Id;originalStart=s.Data.Tasks[0].Start;var a=DateTime.Today.AddDays(2);var b=a.AddDays(5);var person=s.Data.People[1].Id;

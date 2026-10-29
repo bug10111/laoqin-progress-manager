@@ -42,6 +42,8 @@ namespace LaoQin.ProgressManager {
   public static string Range(TaskItem t) { return IsDate(t.Start) ? t.Start.Replace('-','.')+" — "+t.End.Replace('-','.') : "尚未安排"; }
   public static bool IsCurrentGanttTask(TaskItem t) { if(!IsDate(t.Start)||!IsDate(t.End))return false;if(t.InGantt||t.Status=="已完成")return true;if(String.IsNullOrEmpty(t.PersonId))return false;return !t.History.Any(h=>h.Kind=="退出本次排期"); }
   public static List<Change> Timeline(TaskItem t) { return t.History.AsEnumerable().Reverse().OrderBy(h=>DateTimeOffset.Parse(h.At)).ToList(); }
+  public static bool HasInitialDetails(TaskItem t) { return !String.IsNullOrWhiteSpace(t.Note); }
+  public static int TimelineNodeCount(TaskItem t) { return t.History.Count+(HasInitialDetails(t)&&!t.History.Any(h=>h.Kind=="创建任务")?1:0); }
   public static string HistoryTime(Change h) { return DateTimeOffset.Parse(h.At).LocalDateTime.ToString("yyyy-MM-dd HH:mm"); }
   public static void Record(AppData d, TaskItem t, string kind, string before, string detail) {
    t.History.Insert(0,new Change { At=DateTimeOffset.Now.ToString("o"), Kind=kind, Before=before??"",After=t.Status,Priority=t.Priority,Name=t.Name,PersonName=PersonName(d,t.PersonId),Start=t.Start??"",End=t.End??"",Detail=detail??"" });
