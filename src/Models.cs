@@ -40,6 +40,7 @@ namespace LaoQin.ProgressManager {
   public static DateTime Monday(DateTime d) { return d.Date.AddDays(-((int)d.DayOfWeek + 6) % 7); }
   public static string PersonName(AppData d, string id) { var p=d.People.FirstOrDefault(x=>x.Id==id); return p==null ? "未分配" : p.Name+(p.Deleted?"（已删除）":""); }
   public static string Range(TaskItem t) { return IsDate(t.Start) ? t.Start.Replace('-','.')+" — "+t.End.Replace('-','.') : "尚未安排"; }
+  public static bool IsCurrentGanttTask(TaskItem t) { if(!IsDate(t.Start)||!IsDate(t.End))return false;if(t.InGantt||t.Status=="已完成")return true;if(String.IsNullOrEmpty(t.PersonId))return false;return !t.History.Any(h=>h.Kind=="退出本次排期"); }
   public static List<Change> Timeline(TaskItem t) { return t.History.AsEnumerable().Reverse().OrderBy(h=>DateTimeOffset.Parse(h.At)).ToList(); }
   public static string HistoryTime(Change h) { return DateTimeOffset.Parse(h.At).LocalDateTime.ToString("yyyy-MM-dd HH:mm"); }
   public static void Record(AppData d, TaskItem t, string kind, string before, string detail) {
