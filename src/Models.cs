@@ -11,10 +11,12 @@ namespace LaoQin.ProgressManager {
  [DataContract] public class Project { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Example; }
  [DataContract] public class Person { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Deleted; }
  [DataContract] public class Change {
+  [DataMember] public string Priority;
   [DataMember] public string At; [DataMember] public string Kind; [DataMember] public string Before; [DataMember] public string After;
   [DataMember] public string Name; [DataMember] public string PersonName; [DataMember] public string Start; [DataMember] public string End; [DataMember] public string Detail;
  }
  [DataContract] public class TaskItem {
+  [DataMember] public string Priority = "P0";
   [DataMember] public string Id; [DataMember] public string ProjectId; [DataMember] public string Name; [DataMember] public string Status;
   [DataMember] public string PersonId; [DataMember] public string Start; [DataMember] public string End; [DataMember] public string Note;
   [DataMember] public bool InGantt; [DataMember] public List<Change> History = new List<Change>();
@@ -27,6 +29,8 @@ namespace LaoQin.ProgressManager {
   [DataMember] public string CurrentProjectId;
  }
  public static class Model {
+  public static readonly string[] Priorities = { "P0", "P1", "P2", "P3" };
+  public static IOrderedEnumerable<TaskItem> OrderTasks(IEnumerable<TaskItem> tasks) { return tasks.OrderBy(t=>Array.IndexOf(Statuses,t.Status)).ThenBy(t=>Array.IndexOf(Priorities,t.Priority)).ThenBy(t=>TaskPrefix(t.Name)).ThenBy(t=>t.Start).ThenBy(t=>t.Name); }
   public static readonly string[] Statuses = { "执行中", "待执行", "待讨论", "已完成", "已暂停", "已关闭" };
   public static string TaskPrefix(string name) { if(String.IsNullOrEmpty(name)||name[0]!='【')return "";int end=name.IndexOf('】');return end>1?name.Substring(0,end+1):""; }
   public static string Id() { return Guid.NewGuid().ToString("N"); }
@@ -39,7 +43,7 @@ namespace LaoQin.ProgressManager {
   public static List<Change> Timeline(TaskItem t) { return t.History.AsEnumerable().Reverse().OrderBy(h=>DateTimeOffset.Parse(h.At)).ToList(); }
   public static string HistoryTime(Change h) { return DateTimeOffset.Parse(h.At).LocalDateTime.ToString("yyyy-MM-dd HH:mm"); }
   public static void Record(AppData d, TaskItem t, string kind, string before, string detail) {
-   t.History.Insert(0,new Change { At=DateTimeOffset.Now.ToString("o"), Kind=kind, Before=before??"",After=t.Status,Name=t.Name,PersonName=PersonName(d,t.PersonId),Start=t.Start??"",End=t.End??"",Detail=detail??"" });
+   t.History.Insert(0,new Change { At=DateTimeOffset.Now.ToString("o"), Kind=kind, Before=before??"",After=t.Status,Priority=t.Priority,Name=t.Name,PersonName=PersonName(d,t.PersonId),Start=t.Start??"",End=t.End??"",Detail=detail??"" });
   }
   public static void Check(AppData d) {
    if(d==null || d.Version!=1 || d.Projects==null || d.People==null || d.Tasks==null) throw new InvalidOperationException("数据格式或版本不受支持。");
@@ -48,6 +52,8 @@ namespace LaoQin.ProgressManager {
    if(d.People.Any(x=>String.IsNullOrWhiteSpace(x.Id)||String.IsNullOrWhiteSpace(x.Name)) || d.People.Select(x=>x.Id).Distinct().Count()!=d.People.Count) throw new InvalidOperationException("人员数据不完整或重复。");
    if(d.Tasks.Select(x=>x.Id).Distinct().Count()!=d.Tasks.Count) throw new InvalidOperationException("存在重复的任务标识。");
    foreach(var t in d.Tasks) {
+    if(String.IsNullOrEmpty(t.Priority))t.Priority="P0";
+    if(!Priorities.Contains(t.Priority))throw new InvalidOperationException("任务优先级必须为 P0、P1、P2 或 P3。");
     if(String.IsNullOrWhiteSpace(t.Id)||String.IsNullOrWhiteSpace(t.Name)||!d.Projects.Any(p=>p.Id==t.ProjectId)||!Statuses.Contains(t.Status)||t.History==null) throw new InvalidOperationException("任务数据不完整。");
     foreach(var h in t.History){DateTimeOffset at;if(h==null||!DateTimeOffset.TryParse(h.At,out at)||!Statuses.Contains(h.After))throw new InvalidOperationException("任务时间线缺少有效的时间或状态。");}
     if(!String.IsNullOrEmpty(t.PersonId)&&!d.People.Any(p=>p.Id==t.PersonId)) throw new InvalidOperationException("任务负责人不存在。");
@@ -75,7 +81,8 @@ namespace LaoQin.ProgressManager {
    return d;
   }
   // A task has at most one current bar. Replacing a bar does not delete the original task.
-  public static void ReplaceSchedule(AppData d,string originalId,IEnumerable<string> selectedIds,DateTime start,DateTime end,string personId) {
+  public static void ReplaceSchedule(AppData d,string originalId,IEnumerable<string> selectedIds,DateTime start,DateTime end,string personId,string priority=null) {
+   if(priority!=null&&!Priorities.Contains(priority))throw new InvalidOperationException("请选择有效的优先级。");
    var ids=new HashSet<string>(selectedIds); if(ids.Count==0)throw new InvalidOperationException("请至少选择一项任务。");
    if(start.Date>end.Date)throw new InvalidOperationException("结束日期不能早于开始日期。");
    var original=d.Tasks.FirstOrDefault(t=>t.Id==originalId); string project=original==null?d.CurrentProjectId:original.ProjectId;
@@ -84,7 +91,7 @@ namespace LaoQin.ProgressManager {
    foreach(var t in chosen) if(String.IsNullOrEmpty(personId)&&String.IsNullOrEmpty(t.PersonId))throw new InvalidOperationException("选中的任务含未分配人员的任务，请选择负责人。");
    if(!String.IsNullOrEmpty(personId)&&!d.People.Any(p=>p.Id==personId&&!p.Deleted))throw new InvalidOperationException("请选择有效的负责人。");
    if(original!=null&&!ids.Contains(original.Id)){original.InGantt=false;Record(d,original,"退出本次排期",original.Status,"甘特条已替换，任务与原有日期保留。");}
-   foreach(var t in chosen){string previous=Range(t);if(!String.IsNullOrEmpty(personId))t.PersonId=personId;t.Start=Date(start);t.End=Date(end);t.InGantt=true;Record(d,t,"调整甘特图排期",t.Status,"原计划："+previous+"。任务状态保持不变。");}
+   foreach(var t in chosen){string previous=Range(t),oldPriority=t.Priority;if(priority!=null)t.Priority=priority;if(!String.IsNullOrEmpty(personId))t.PersonId=personId;t.Start=Date(start);t.End=Date(end);t.InGantt=true;Record(d,t,"调整甘特图排期",t.Status,"原计划："+previous+"。任务状态保持不变。"+(oldPriority!=t.Priority?"优先级："+oldPriority+" → "+t.Priority+"。":""));}
   }
  }
 }

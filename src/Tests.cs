@@ -15,6 +15,19 @@ namespace LaoQin.ProgressManager {
   static void Fails(Action action,string name){bool failed=false;try{action();}catch{failed=true;}Check(failed,name);}
   public static void Run(string folder){
    Directory.CreateDirectory(folder);string data=Path.Combine(folder,"local-data-"+Guid.NewGuid().ToString("N"));string originalId,chosenId,pendingId,originalStart;
+   var priorityData=Model.Sample();
+   string legacyJson=System.Text.RegularExpressions.Regex.Replace(Encoding.UTF8.GetString(Store.Encode(priorityData)),"\"Priority\":(?:\"[^\"]*\"|null),?", "");
+   Check(Store.Decode(Encoding.UTF8.GetBytes(legacyJson)).Tasks.All(t=>t.Priority=="P0"),"legacy JSON without priority defaults all tasks to P0");
+   var priorityTasks=priorityData.Tasks.Take(4).ToList();
+   for(int i=0;i<4;i++)priorityTasks[i].Priority=Model.Priorities[3-i];
+   Check(Model.OrderTasks(priorityTasks).Select(t=>t.Priority).SequenceEqual(Model.Priorities),"same status sorts P0 through P3 ahead of prefix and dates");
+   priorityTasks[0].Status="待执行";priorityTasks[0].Priority="P0";
+   Check(Model.OrderTasks(priorityTasks).Last()==priorityTasks[0],"status sorting takes precedence over priority");
+   var priorityTarget=priorityTasks[1];Model.ReplaceSchedule(priorityData,priorityTarget.Id,new[]{priorityTarget.Id},DateTime.Today,DateTime.Today,priorityData.People[0].Id,"P2");
+   Check(priorityTarget.Priority=="P2"&&priorityTarget.History[0].Priority=="P2"&&Store.Decode(Store.Encode(priorityData)).Tasks.First(t=>t.Id==priorityTarget.Id).Priority=="P2","Gantt priority edits persist in task, history and JSON");
+   Model.ReplaceSchedule(priorityData,priorityTarget.Id,new[]{priorityTarget.Id},DateTime.Today,DateTime.Today,priorityData.People[0].Id);
+   Check(priorityTarget.Priority=="P2","rescheduling preserves priority by default");
+   Fails(()=>{var invalid=Store.Decode(Store.Encode(priorityData));invalid.Tasks[0].Priority="P4";Model.Check(invalid);},"reject priority outside P0 to P3");
    var timelineData=Model.Sample();var timelineTask=timelineData.Tasks[0];timelineTask.Note="";timelineTask.History.Clear();Model.Record(timelineData,timelineTask,"创建任务","","");timelineTask.History[0].At="2026-10-20T09:00:00+08:00";
    Model.Record(timelineData,timelineTask,"需求追加",timelineTask.Status,"核实是否通过，进度如何");timelineTask.History[0].At="2026-10-21T11:00:00+08:00";
    Model.Record(timelineData,timelineTask,"状态变更","待执行","");timelineTask.History[0].At="2026-10-21T02:00:00+00:00";

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
@@ -55,8 +55,8 @@ namespace LaoQin.ProgressManager {
    var project=d.Projects.First(x=>x.Id==projectId);var root=new XElement("LaoQinProject",new XAttribute("schemaVersion","1"),new XAttribute("exportedAt",DateTimeOffset.Now.ToString("o")),new XAttribute("dateConvention","inclusive-calendar-days"),new XElement("Project",new XAttribute("id",project.Id),new XElement("Name",project.Name)));
    var people=new XElement("People");foreach(var p in d.People)people.Add(new XElement("Person",new XAttribute("id",p.Id),new XAttribute("deleted",p.Deleted),new XElement("Name",p.Name)));root.Add(people);
    var tasks=new XElement("Tasks");foreach(var t in d.Tasks.Where(x=>x.ProjectId==projectId)){
-    var node=new XElement("Task",new XAttribute("id",t.Id),new XElement("Name",t.Name),new XElement("Status",t.Status),new XElement("PersonId",t.PersonId??""),new XElement("PersonName",Model.PersonName(d,t.PersonId)),new XElement("Start",t.Start??""),new XElement("End",t.End??""),new XElement("InCurrentGantt",t.InGantt),new XElement("Note",t.Note??""));
-    var history=new XElement("Timeline");foreach(var h in t.History)history.Add(new XElement("Change",new XAttribute("at",h.At??""),new XElement("Kind",h.Kind??""),new XElement("BeforeStatus",h.Before??""),new XElement("AfterStatus",h.After??""),new XElement("TaskName",h.Name??""),new XElement("PersonName",h.PersonName??""),new XElement("Start",h.Start??""),new XElement("End",h.End??""),new XElement("Detail",h.Detail??"")));node.Add(history);tasks.Add(node);
+    var node=new XElement("Task",new XAttribute("id",t.Id),new XElement("Name",t.Name),new XElement("Status",t.Status),new XElement("Priority",t.Priority),new XElement("PersonId",t.PersonId??""),new XElement("PersonName",Model.PersonName(d,t.PersonId)),new XElement("Start",t.Start??""),new XElement("End",t.End??""),new XElement("InCurrentGantt",t.InGantt),new XElement("Note",t.Note??""));
+    var history=new XElement("Timeline");foreach(var h in t.History)history.Add(new XElement("Change",new XAttribute("at",h.At??""),new XElement("Kind",h.Kind??""),new XElement("BeforeStatus",h.Before??""),new XElement("AfterStatus",h.After??""),new XElement("Priority",h.Priority??""),new XElement("TaskName",h.Name??""),new XElement("PersonName",h.PersonName??""),new XElement("Start",h.Start??""),new XElement("End",h.End??""),new XElement("Detail",h.Detail??"")));node.Add(history);tasks.Add(node);
    }
    root.Add(tasks);using(var m=new MemoryStream()){new XDocument(new XDeclaration("1.0","utf-8",null),root).Save(m);Store.SafeOutput(path,m.ToArray());}
   }

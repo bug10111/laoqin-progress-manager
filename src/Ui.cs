@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
@@ -38,6 +38,14 @@ namespace LaoQin.ProgressManager {
   public static Brush StatusInk(string s){return s=="执行中"?Brand:s=="待执行"?B("#A8742B"):s=="已完成"?B("#258871"):s=="已暂停"?B("#8065AC"):Muted;}
   public static Brush StatusFill(string s){return s=="执行中"?BrandSoft:s=="待执行"?B("#FCF3E4"):s=="已完成"?B("#EAF6F0"):s=="已暂停"?B("#F0ECF9"):Side;}
   public static Border Badge(string status){return new Border{Child=Text("●  "+status,11,StatusInk(status)),Background=StatusFill(status),CornerRadius=new CornerRadius(5),Padding=new Thickness(7,4,7,4),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};}
+  public static Brush PriorityInk(string p){return B(p=="P0"?"#BE3445":p=="P1"?"#AE610F":p=="P2"?"#3267BE":"#64748B");}
+  public static Brush PriorityFill(string p){return B(p=="P0"?"#FDECEF":p=="P1"?"#FFF2DE":p=="P2"?"#EAF2FF":"#EEF1F5");}
+  public static Border PriorityBadge(string p){return new Border{Child=Text(p,11,PriorityInk(p),true),Background=PriorityFill(p),CornerRadius=new CornerRadius(4),Padding=new Thickness(6,2,6,2),VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Left,ToolTip="优先级 "+p};}
+  public static FrameworkElement TaskTitle(string name,string priority,double size=13){var row=new DockPanel{LastChildFill=true,HorizontalAlignment=HorizontalAlignment.Left};var badge=PriorityBadge(priority);badge.Margin=new Thickness(7,0,0,0);DockPanel.SetDock(badge,Dock.Right);row.Children.Add(badge);row.Children.Add(Ellipsis(name,size,null,true));return row;}
+  public static ComboBox PriorityPicker(ComboBox picker){
+   string triggers="";foreach(var p in Model.Priorities)triggers+="<DataTrigger Binding='{Binding}' Value='"+p+"'><Setter TargetName='badge' Property='Background' Value='"+PriorityFill(p)+"'/><Setter TargetName='badge' Property='Padding' Value='6,2'/><Setter TargetName='text' Property='Foreground' Value='"+PriorityInk(p)+"'/><Setter TargetName='text' Property='FontWeight' Value='SemiBold'/></DataTrigger>";
+   picker.ItemTemplate=(DataTemplate)XamlReader.Parse("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'><Border x:Name='badge' CornerRadius='4' HorizontalAlignment='Left'><TextBlock x:Name='text' Text='{Binding}' FontSize='11'/></Border><DataTemplate.Triggers>"+triggers+"</DataTemplate.Triggers></DataTemplate>");return picker;
+  }
   public static Border Rule(){return new Border{Height=1,Background=Line,Margin=new Thickness(0,15,0,15)};}
   public static void Margin(FrameworkElement el,double bottom=12){el.Margin=new Thickness(0,0,0,bottom);}
   public static void Label(Panel p,string caption,UIElement field){var t=Text(caption,12);t.Margin=new Thickness(0,16,0,7);p.Children.Add(t);p.Children.Add(field);}
@@ -47,17 +55,17 @@ namespace LaoQin.ProgressManager {
   }
   public static Popup Popup(Button anchor,UIElement child,double width=300){var p=new Popup{PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true,HorizontalOffset=0,VerticalOffset=5};p.Child=new Border{Background=Brushes.White,BorderBrush=Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Width=width,Padding=new Thickness(9),Child=child};return p;}
  }
- public class Choice {public string Id;public string Label;}
+ public class Choice {public string Id;public string Label;public string Priority;public string Detail;}
  public class MultiPicker:Grid {
   public HashSet<string> Selected=new HashSet<string>();public Action Changed;List<Choice> choices;Button button;Popup popup;string label;StackPanel rows;
   public MultiPicker(string caption,IEnumerable<Choice> options,IEnumerable<string> selected){label=caption;choices=options.ToList();Selected=new HashSet<string>(selected??new string[0]);button=Ui.Button("",()=>{Build();popup.IsOpen=!popup.IsOpen;});button.HorizontalContentAlignment=HorizontalAlignment.Left;button.MinWidth=140;Children.Add(button);popup=Ui.Popup(button,new Grid(),360);Update();}
-  void Update(){string names=String.Join("、",choices.Where(x=>Selected.Contains(x.Id)).Select(x=>x.Label));button.Content=label+"："+(Selected.Count==0?"未选择":Selected.Count<=2&&names.Length<16?names:"已选 "+Selected.Count+" 项")+"  ⌄";AutomationProperties.SetName(button,label+"多选下拉");}
+  void Update(){string names=String.Join("、",choices.Where(x=>Selected.Contains(x.Id)).Select(x=>x.Label));button.Content=label+"："+(Selected.Count==0?"未选择":Selected.Count<=2&&names.Length<16?names:"已选 "+Selected.Count+" 项")+"  ⌄";var selected=choices.Where(x=>Selected.Contains(x.Id)).ToList();if(selected.Count==1&&selected[0].Priority!=null){var title=Ui.TaskTitle(selected[0].Label,selected[0].Priority,12);title.MaxWidth=290;button.Content=title;}AutomationProperties.SetName(button,label+"多选下拉");}
   public void SetOptions(IEnumerable<Choice> options,bool restrict){choices=options.ToList();if(restrict)Selected.IntersectWith(choices.Select(x=>x.Id));Update();if(popup.IsOpen)Build();}
   public void SelectAll(){Selected=new HashSet<string>(choices.Select(x=>x.Id));Update();if(Changed!=null)Changed();}
   internal FrameworkElement Preview(){Build();return (FrameworkElement)popup.Child;}
   void Build(){
    var panel=Ui.Stack();var head=Ui.Stack(true);var all=Ui.Button("全选",()=>{Selected=new HashSet<string>(choices.Select(x=>x.Id));Build();Update();if(Changed!=null)Changed();});var none=Ui.Button("清空",()=>{Selected.Clear();Build();Update();if(Changed!=null)Changed();});all.Padding=none.Padding=new Thickness(9,5,9,5);none.Margin=new Thickness(6,0,0,0);head.Children.Add(all);head.Children.Add(none);panel.Children.Add(head);rows=Ui.Stack();
-   foreach(var item in choices){var local=item;var cb=new CheckBox{Content=Ui.Text(item.Label,12),IsChecked=Selected.Contains(item.Id),Padding=new Thickness(3,5,3,5)};AutomationProperties.SetName(cb,item.Label);cb.Click+=(s,e)=>{if(cb.IsChecked==true)Selected.Add(local.Id);else Selected.Remove(local.Id);Update();if(Changed!=null)Changed();};rows.Children.Add(cb);}
+   foreach(var item in choices){var local=item;UIElement content=Ui.Text(item.Label,12);if(item.Priority!=null){var info=Ui.Stack();info.Children.Add(Ui.TaskTitle(item.Label,item.Priority,12));if(item.Detail!=null)info.Children.Add(Ui.Text(item.Detail,11,Ui.Muted));content=info;}var cb=new CheckBox{Content=content,HorizontalContentAlignment=HorizontalAlignment.Stretch,IsChecked=Selected.Contains(item.Id),Padding=new Thickness(3,5,3,5)};AutomationProperties.SetName(cb,item.Label);cb.Click+=(s,e)=>{if(cb.IsChecked==true)Selected.Add(local.Id);else Selected.Remove(local.Id);Update();if(Changed!=null)Changed();};rows.Children.Add(cb);}
    if(choices.Count==0)rows.Children.Add(Ui.Text("没有符合筛选条件的任务",12,Ui.Muted));panel.Children.Add(new ScrollViewer{Content=rows,MaxHeight=270,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});var done=Ui.Button("完成",()=>popup.IsOpen=false,true);done.Margin=new Thickness(0,8,0,0);panel.Children.Add(done);((Border)popup.Child).Child=panel;
   }
  }
