@@ -15,6 +15,15 @@ namespace LaoQin.ProgressManager {
   static void Fails(Action action,string name){bool failed=false;try{action();}catch{failed=true;}Check(failed,name);}
   public static void Run(string folder){
    Directory.CreateDirectory(folder);string data=Path.Combine(folder,"local-data-"+Guid.NewGuid().ToString("N"));string originalId,chosenId,pendingId,originalStart;
+   TaskExportTests.Run(folder,Check,Fails);
+   Func<string,string,string,string,TaskItem> sortTask=(name,status,priority,at)=>new TaskItem{Name=name,Status=status,Priority=priority,History=String.IsNullOrEmpty(at)?new List<Change>():new List<Change>{new Change{Kind="创建任务",At=at,After=status}}};
+   var sortStatuses=new[]{"已关闭","已完成","已暂停","待讨论","待执行","测试中","执行中"}.Select(s=>sortTask(s,s,"P0","2026-10-20T09:00:00+08:00")).ToList();
+   Check(Model.OrderTaskList(sortStatuses).Select(t=>t.Status).SequenceEqual(new[]{"执行中","测试中","待执行","待讨论","已暂停","已完成","已关闭"}),"列表优先执行中、其次测试中，其余状态按工作优先顺序显示");
+   var oldTask=sortTask("【A】旧任务","执行中","P0","2026-10-20T09:30:00+08:00");oldTask.Start="2026-10-01";oldTask.History.Insert(0,new Change{Kind="需求追加",At="2026-10-31T23:00:00+08:00",After="执行中"});
+   var newTask=sortTask("【Z】新任务","执行中","P0","2026-10-20T02:00:00+00:00");newTask.Start="2026-11-30";
+   var sorted=Model.OrderTaskList(new[]{sortTask("测试中P0","测试中","P0","2026-10-31T09:00:00+08:00"),sortTask("执行中P3","执行中","P3","2026-10-31T09:00:00+08:00"),oldTask,sortTask("执行中P1","执行中","P1","2026-10-31T09:00:00+08:00"),sortTask("无创建记录","执行中","P0",""),newTask}).Select(t=>t.Name);
+   Check(sorted.SequenceEqual(new[]{"【Z】新任务","【A】旧任务","无创建记录","执行中P1","执行中P3","测试中P0"}),"列表依次按状态、P0至P3、真实创建时间倒序，更新记录、前缀与计划日期不干扰排序，缺失创建时间排后");
+   Check(Model.ProgressStatuses.SequenceEqual(new[]{"待讨论","待执行","执行中","测试中","已完成"}),"列表工作优先排序不改变功能进度的正常流程顺序");
    var priorityData=Model.Sample();
    string legacyJson=System.Text.RegularExpressions.Regex.Replace(Encoding.UTF8.GetString(Store.Encode(priorityData)),"\"Priority\":(?:\"[^\"]*\"|null),?", "");
    Check(Store.Decode(Encoding.UTF8.GetBytes(legacyJson)).Tasks.All(t=>t.Priority=="P0"),"legacy JSON without priority defaults all tasks to P0");
@@ -22,24 +31,24 @@ namespace LaoQin.ProgressManager {
    for(int i=0;i<4;i++)priorityTasks[i].Priority=Model.Priorities[3-i];
    Check(Model.OrderTasks(priorityTasks).Select(t=>t.Priority).SequenceEqual(Model.Priorities),"same status sorts P0 through P3 ahead of prefix and dates");
    priorityTasks[0].Status="待执行";priorityTasks[0].Priority="P0";
-   Check(Model.OrderTasks(priorityTasks).Last()==priorityTasks[0],"status sorting takes precedence over priority");
+   Check(Model.OrderTasks(priorityTasks).First()==priorityTasks[0],"status sorting takes precedence over priority");
    var priorityTarget=priorityTasks[1];Model.ReplaceSchedule(priorityData,priorityTarget.Id,new[]{priorityTarget.Id},DateTime.Today,DateTime.Today,priorityData.People[0].Id,"P2");
    Check(priorityTarget.Priority=="P2"&&priorityTarget.History[0].Priority=="P2"&&Store.Decode(Store.Encode(priorityData)).Tasks.First(t=>t.Id==priorityTarget.Id).Priority=="P2","Gantt priority edits persist in task, history and JSON");
    Model.ReplaceSchedule(priorityData,priorityTarget.Id,new[]{priorityTarget.Id},DateTime.Today,DateTime.Today,priorityData.People[0].Id);
    Check(priorityTarget.Priority=="P2","rescheduling preserves priority by default");
    Fails(()=>{var invalid=Store.Decode(Store.Encode(priorityData));invalid.Tasks[0].Priority="P4";Model.Check(invalid);},"reject priority outside P0 to P3");
    var timelineData=Model.Sample();var timelineTask=timelineData.Tasks[0];timelineTask.Note="";timelineTask.History.Clear();Model.Record(timelineData,timelineTask,"创建任务","","");timelineTask.History[0].At="2026-10-20T09:00:00+08:00";
-   Check(!Model.HasInitialDetails(timelineTask)&&Model.TimelineNodeCount(timelineTask)==1,"无初始详情的任务仍统计创建节点");
+   Check(!Model.HasInitialDetails(timelineTask)&&Model.TimelineNodeCount(timelineTask)==1,"无备注的任务仍统计创建节点");
    Model.Record(timelineData,timelineTask,"需求追加",timelineTask.Status,"核实是否通过，进度如何");timelineTask.History[0].At="2026-10-21T11:00:00+08:00";
    Model.Record(timelineData,timelineTask,"状态变更","待执行","");timelineTask.History[0].At="2026-10-21T02:00:00+00:00";
    var chronological=Model.Timeline(timelineTask);Check(chronological.Select(h=>h.Kind).SequenceEqual(new[]{"创建任务","状态变更","需求追加"}),"timeline orders creation, status and requirement records by timestamp including offsets");
    Check(chronological[0].Kind=="创建任务"&&String.IsNullOrEmpty(timelineTask.Note),"creation remains in timeline without an initial requirement");
    var restoredTimeline=Store.Decode(Store.Encode(timelineData)).Tasks[0];Check(Model.Timeline(restoredTimeline).Last().Detail=="核实是否通过，进度如何"&&restoredTimeline.History.Count==3,"combined timeline preserves original and appended records through JSON round-trip");
-   Check(!Model.HasInitialDetails(restoredTimeline)&&Model.TimelineNodeCount(restoredTimeline)==3,"追加需求与状态变更计入节点，且不改变初始详情标记");
-   var legacyDetails=new TaskItem{Note="旧版初始详情"};Check(Model.HasInitialDetails(legacyDetails)&&Model.TimelineNodeCount(legacyDetails)==1,"旧版任务无创建记录时统计独立的初始详情节点");
-   Model.Record(timelineData,legacyDetails,"需求追加","","后续补充");Check(Model.TimelineNodeCount(legacyDetails)==2,"旧版初始详情与追加记录均计入节点");
-   Model.Record(timelineData,legacyDetails,"创建任务","","");Check(Model.TimelineNodeCount(legacyDetails)==2,"初始详情合入创建节点后不重复计数");
-   Check(!Model.HasInitialDetails(new TaskItem{Note=" \r\n "})&&Model.TimelineNodeCount(new TaskItem())==0,"空白详情与空历史分别显示无详情和零节点");
+   Check(!Model.HasInitialDetails(restoredTimeline)&&Model.TimelineNodeCount(restoredTimeline)==3,"追加需求与状态变更计入节点，且不改变备注标记");
+   var legacyDetails=new TaskItem{Note="旧版备注"};Check(Model.HasInitialDetails(legacyDetails)&&Model.TimelineNodeCount(legacyDetails)==1,"旧版任务无创建记录时统计独立的备注节点");
+   Model.Record(timelineData,legacyDetails,"需求追加","","后续补充");Check(Model.TimelineNodeCount(legacyDetails)==2,"旧版备注与追加记录均计入节点");
+   Model.Record(timelineData,legacyDetails,"创建任务","","");Check(Model.TimelineNodeCount(legacyDetails)==2,"备注合入创建节点后不重复计数");
+   Check(!Model.HasInitialDetails(new TaskItem{Note=" \r\n "})&&Model.TimelineNodeCount(new TaskItem())==0,"空白详情与空历史分别显示无备注和零节点");
    using(var s=new Store(data)){
     Check(s.Data.Tasks.Count==16,"first-run sample and all local entities");Check(s.Data.Tasks.Count(t=>t.InGantt)==5,"five initial bars");
     originalId=s.Data.Tasks[0].Id;chosenId=s.Data.Tasks[1].Id;pendingId=s.Data.Tasks[5].Id;originalStart=s.Data.Tasks[0].Start;var a=DateTime.Today.AddDays(2);var b=a.AddDays(5);var person=s.Data.People[1].Id;

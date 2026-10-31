@@ -22,6 +22,7 @@ namespace LaoQin.ProgressManager {
   [DataMember] public bool InGantt; [DataMember] public List<Change> History = new List<Change>();
  }
  [DataContract] public class AppData {
+  [DataMember(EmitDefaultValue=false)] public TaskExportPreferences TaskExcelPreferences;
   [DataMember] public int Version = 1;
   [DataMember] public List<Project> Projects = new List<Project>();
   [DataMember] public List<Person> People = new List<Person>();
@@ -31,7 +32,17 @@ namespace LaoQin.ProgressManager {
  public static class Model {
   public static readonly string[] Priorities = { "P0", "P1", "P2", "P3" };
   public static IOrderedEnumerable<TaskItem> OrderTasks(IEnumerable<TaskItem> tasks) { return tasks.OrderBy(t=>Array.IndexOf(Statuses,t.Status)).ThenBy(t=>Array.IndexOf(Priorities,t.Priority)).ThenBy(t=>TaskPrefix(t.Name)).ThenBy(t=>t.Start).ThenBy(t=>t.Name); }
-  public static readonly string[] Statuses = { "执行中", "待执行", "待讨论", "已完成", "已暂停", "已关闭" };
+  // 列表优先展示正在推进的任务；流程节点仍按独立的正常阶段顺序显示。
+  public static readonly string[] ListStatusOrder = { "执行中", "测试中", "待执行", "待讨论", "已暂停", "已完成", "已关闭" };
+  public static IOrderedEnumerable<TaskItem> OrderTaskList(IEnumerable<TaskItem> tasks){return tasks.OrderBy(t=>Array.IndexOf(ListStatusOrder,t.Status)).ThenBy(t=>Array.IndexOf(Priorities,t.Priority)).ThenByDescending(t=>TaskCreatedAt(t)??DateTimeOffset.MinValue);}
+  // 只取创建节点，后续追加与修改不会改变任务的创建顺序；未记录创建时间的旧数据排后。
+  public static DateTimeOffset? TaskCreatedAt(TaskItem task){return task.History.Where(h=>h.Kind=="创建任务").Select(h=>(DateTimeOffset?)DateTimeOffset.Parse(h.At)).OrderBy(at=>at).FirstOrDefault();}
+  public static readonly string[] ProgressStatuses = { "待讨论", "待执行", "执行中", "测试中", "已完成" };
+  public static readonly string[] Statuses = ProgressStatuses.Concat(new[]{"已暂停","已关闭"}).ToArray();
+  public static int ProgressIndex(TaskItem task){
+   int current=Array.IndexOf(ProgressStatuses,task.Status);if(current>=0)return current;
+   var last=Timeline(task).LastOrDefault(h=>ProgressStatuses.Contains(h.After));return last==null?-1:Array.IndexOf(ProgressStatuses,last.After);
+  }
   public static string TaskPrefix(string name) { if(String.IsNullOrEmpty(name)||name[0]!='【')return "";int end=name.IndexOf('】');return end>1?name.Substring(0,end+1):""; }
   public static string Id() { return Guid.NewGuid().ToString("N"); }
   public static string Date(DateTime d) { return d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); }

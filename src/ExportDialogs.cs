@@ -35,6 +35,7 @@ namespace LaoQin.ProgressManager {
   }
   public static void Help(Window owner,Store store){
    var w=Ui.Dialog(owner,"使用说明",520);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text("老秦 · 离线项目与甘特图",21,null,true));
+   var excelHelp=Ui.Text("任务 Excel：在任务列表点击“导出 Excel”，首次默认勾选全部表头；拖动左侧 ≡ 调整列顺序。成功导出后记住顺序和勾选，重启后保留；“恢复默认”重置顺序并全选。导出当前项目、状态、优先级和关键词匹配的全部任务（包含所有分页）；无筛选时导出当前项目全部任务。追加需求按时间逐行展示，同一任务的基础信息合并。取消勾选的字段不导出，取消弹窗不生成文件，当前筛选条件保持不变。",12,Ui.Muted);excelHelp.Margin=new Thickness(0,17,0,0);p.Children.Add(excelHelp);
    foreach(var text in new[]{"1. 左侧项目下拉可切换、新增和删除项目，可删除最后一个项目。删除时清除该项目的任务、排期和时间线，共享人员及备份保留。","2. 新建任务后，点击任务名称查看时间线；点击状态或“编辑任务”修改信息。设为执行中时必须选择负责人和起止日期。","3. 甘特图默认显示执行中。顶部状态下拉可切换任务状态、全部状态，或使用自选多状态；有负责人和完整计划日期的任务会按所选状态显示，已明确退出排期的任务除外。已完成视图也包含有日期的已完成任务。PDF / PNG 导出和图表详情沿用当前状态筛选。","4. 点击甘特条，先按状态筛选，再按任务名称搜索并多选。搜索后点击“全选”只选择匹配结果；保存时选中的任务替换当前甘特条。原任务若未再次选中，则退出本次排期，任务、原日期和历史记录保留。","5. 同一任务在当前排期中只有一个甘特条。多选任务使用同一负责人和起止日期，任务状态保持不变。日期按自然日计算，包含结束当天；周六、周日单独标注。","6. PDF 使用 A4 横向分页；PNG 多页自动打包为 ZIP。XML 为通用数据格式，并非 Microsoft Project 的专用格式。","7. 左侧“数据导入导出”可导出全部项目、人员、任务、排期和时间线。导入全部数据会覆盖当前数据，并自动备份导入前的数据。首次启动的示例项目可自行删除。","快捷键：Ctrl+N 新建任务，Ctrl+E 导出甘特图。"}){var t=Ui.Text(text,12,Ui.Muted);t.Margin=new Thickness(0,17,0,0);p.Children.Add(t);}var close=Ui.Button("知道了",()=>w.Close(),true);close.Margin=new Thickness(0,24,0,0);p.Children.Add(close);w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();
   }
  }

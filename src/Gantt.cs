@@ -58,7 +58,7 @@ namespace LaoQin.ProgressManager {
     hits.Add(new BarHit{Rect=rect,Task=t});
    }
    if(tasks.Count==0){Text(c,"还没有符合筛选条件的排期",label+35,top+110,16,Ui.Muted,width-label-70);Text(c,"请检查任务状态和计划日期，或点击“安排现有任务”。",label+35,top+145,12,Ui.Muted,width-label-70);}
-   double fy=baseHeight-25,lx=16;foreach(var status in tasks.Select(t=>t.Status).Distinct()){c.DrawRoundedRectangle(Ui.StatusInk(status),null,new Rect(lx,fy+5,7,7),2,2);Text(c,status,lx+13,fy,11,Ui.Muted,57);lx+=74;}c.DrawRectangle(Ui.B("#F0F1F6"),pen,new Rect(lx,fy+5,7,7));Text(c,"周六 / 周日",lx+13,fy,11,Ui.Muted,100);if(document)Text(c,"生成于 "+DateTime.Now.ToString("yyyy.MM.dd HH:mm")+"  ·  所有日期均为自然日",width-360,fy,10,Ui.Muted,344);else if(width-220>lx+125)Text(c,"点击甘特条编辑任务与时间",width-220,fy,11,Ui.Muted,200);
+   double fy=baseHeight-25,lx=16;foreach(var status in Model.Statuses.Where(s=>tasks.Any(t=>t.Status==s))){c.DrawRoundedRectangle(Ui.StatusInk(status),null,new Rect(lx,fy+5,7,7),2,2);Text(c,status,lx+13,fy,11,Ui.Muted,57);lx+=74;}c.DrawRectangle(Ui.B("#F0F1F6"),pen,new Rect(lx,fy+5,7,7));Text(c,"周六 / 周日",lx+13,fy,11,Ui.Muted,100);if(document)Text(c,"生成于 "+DateTime.Now.ToString("yyyy.MM.dd HH:mm")+"  ·  所有日期均为自然日",width-360,fy,10,Ui.Muted,344);else if(width-220>lx+125)Text(c,"点击甘特条编辑任务与时间",width-220,fy,11,Ui.Muted,200);
    if(includeDetails&&legend.Count>0){double y=baseHeight+10;Text(c,"任务名称说明",label,y,14,Ui.Ink,width-label-30,true);y+=28;foreach(var item in legend){LegendDot(c,item.Number,label+11,y+10,9);var name=Paragraph(item.Task.Name,12,Ui.Ink,Math.Max(1,width-label-108),true);c.DrawText(name,new Point(label+31,y));PriorityTag(c,item.Task.Priority,label+31+name.Width+7,y);y+=name.Height+10;}}
    return hits;
   }
