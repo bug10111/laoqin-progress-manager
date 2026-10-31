@@ -73,7 +73,8 @@ namespace LaoQin.ProgressManager {
     if(!String.IsNullOrEmpty(t.PersonId)&&!d.People.Any(p=>p.Id==t.PersonId)) throw new InvalidOperationException("任务负责人不存在。");
     bool any=!String.IsNullOrEmpty(t.Start)||!String.IsNullOrEmpty(t.End);
     if(any&&(!IsDate(t.Start)||!IsDate(t.End)||Parse(t.Start)>Parse(t.End))) throw new InvalidOperationException("任务起止日期不正确。");
-    if((t.Status=="执行中"||t.InGantt)&&(!any||String.IsNullOrEmpty(t.PersonId))) throw new InvalidOperationException("执行中或纳入甘特图的任务必须有负责人和完整时间范围。");
+    if(t.Status=="执行中"&&String.IsNullOrEmpty(t.PersonId))throw new InvalidOperationException("执行中的任务必须有负责人。");
+    if(t.InGantt&&(!any||String.IsNullOrEmpty(t.PersonId)))throw new InvalidOperationException("纳入甘特图的任务必须有负责人和完整时间范围。");
    }
    if(!d.Projects.Any(x=>x.Id==d.CurrentProjectId)) d.CurrentProjectId=d.Projects.Count==0?"":d.Projects[0].Id;
   }
@@ -94,18 +95,43 @@ namespace LaoQin.ProgressManager {
    }
    return d;
   }
-  // A task has at most one current bar. Replacing a bar does not delete the original task.
-  public static void ReplaceSchedule(AppData d,string originalId,IEnumerable<string> selectedIds,DateTime start,DateTime end,string personId,string priority=null) {
+  static TaskItem CheckGanttDrag(AppData data,GanttDateChange change){
+   if(change==null)throw new InvalidOperationException("缺少拖动后的计划日期。");var task=data.Tasks.SingleOrDefault(t=>t.Id==change.TaskId);
+   if(task==null||!IsCurrentGanttTask(task))throw new InvalidOperationException("任务已退出排期，请刷新后重试。");
+   if(task.Start!=Date(change.OriginalStart)||task.End!=Date(change.OriginalEnd))throw new InvalidOperationException("任务计划已发生变化，请刷新后重试。");
+   if(change.Start.Date>change.End.Date)throw new InvalidOperationException("结束日期不能早于开始日期。");
+   if(change.Mode==GanttDragMode.Move){if(change.End.Date-change.Start.Date!=change.OriginalEnd.Date-change.OriginalStart.Date)throw new InvalidOperationException("整体移动必须保持原计划天数。");}
+   else if(change.Mode==GanttDragMode.Start){if(change.End.Date!=change.OriginalEnd.Date)throw new InvalidOperationException("拖动开始日期不能改变结束日期。");}
+   else if(change.Mode==GanttDragMode.End){if(change.Start.Date!=change.OriginalStart.Date)throw new InvalidOperationException("拖动结束日期不能改变开始日期。");}
+   else throw new InvalidOperationException("不支持的排期拖动方式。");
+   return task;
+  }
+  static void WriteGanttDrag(AppData data,TaskItem task,GanttDateChange change,int count){if(!change.HasChanges)return;string previous=Range(task);task.Start=Date(change.Start);task.End=Date(change.End);Record(data,task,"拖动甘特图排期",task.Status,(count>1?"批量移动（"+count+" 项）":change.Mode==GanttDragMode.Move?"整体移动":change.Mode==GanttDragMode.Start?"调整开始日期":"调整结束日期")+"；原计划："+previous+"；新计划："+Range(task)+"。");}
+  public static void ApplyGanttDrag(AppData data,GanttDateChange change){WriteGanttDrag(data,CheckGanttDrag(data,change),change,1);}
+  public static void ApplyGanttDrags(AppData data,IEnumerable<GanttDateChange> changes){
+   var chosen=changes.ToList();if(chosen.Count==0||chosen.Any(c=>c==null)||chosen.Select(c=>c.TaskId).Distinct().Count()!=chosen.Count)throw new InvalidOperationException("请选择有效且不重复的任务。");
+   // 先检查整组，再修改日期，任何任务已被改动时均不写入其余任务。
+   var tasks=chosen.Select(c=>CheckGanttDrag(data,c)).ToList();if(tasks.Select(t=>t.ProjectId).Distinct().Count()!=1)throw new InvalidOperationException("只能一起移动同一项目中的任务。");
+   if(chosen.Count>1&&(chosen.Any(c=>c.Mode!=GanttDragMode.Move)||chosen.Select(c=>c.Start.Date-c.OriginalStart.Date).Distinct().Count()!=1))throw new InvalidOperationException("批量拖动必须保持所有任务移动相同天数。");
+   for(int i=0;i<chosen.Count;i++)WriteGanttDrag(data,tasks[i],chosen[i],chosen.Count);
+  }
+  // 同一任务最多一个当前甘特条；替换时保留原任务与历史记录。
+  public static void ReplaceSchedule(AppData d,string originalId,IEnumerable<string> selectedIds,DateTime? start,DateTime? end,string personId,string priority=null,string status=null) {
    if(priority!=null&&!Priorities.Contains(priority))throw new InvalidOperationException("请选择有效的优先级。");
+   if(status!=null&&!Statuses.Contains(status))throw new InvalidOperationException("请选择有效的任务状态。");
    var ids=new HashSet<string>(selectedIds); if(ids.Count==0)throw new InvalidOperationException("请至少选择一项任务。");
-   if(start.Date>end.Date)throw new InvalidOperationException("结束日期不能早于开始日期。");
+   if(start.HasValue!=end.HasValue)throw new InvalidOperationException("请填写完整的起止日期，或同时清空两个日期。");
+   if(start.HasValue&&start.Value.Date>end.Value.Date)throw new InvalidOperationException("结束日期不能早于开始日期。");
    var original=d.Tasks.FirstOrDefault(t=>t.Id==originalId); string project=original==null?d.CurrentProjectId:original.ProjectId;
    var chosen=d.Tasks.Where(t=>ids.Contains(t.Id)).ToList();
    if(chosen.Count!=ids.Count||chosen.Any(t=>t.ProjectId!=project))throw new InvalidOperationException("只能选择当前项目中的任务。");
-   foreach(var t in chosen) if(String.IsNullOrEmpty(personId)&&String.IsNullOrEmpty(t.PersonId))throw new InvalidOperationException("选中的任务含未分配人员的任务，请选择负责人。");
+   foreach(var t in chosen)if(String.IsNullOrEmpty(personId)&&String.IsNullOrEmpty(t.PersonId)&&(start.HasValue||(status??t.Status)=="执行中"))throw new InvalidOperationException("排期或执行中的任务需要负责人，请先选择负责人。");
    if(!String.IsNullOrEmpty(personId)&&!d.People.Any(p=>p.Id==personId&&!p.Deleted))throw new InvalidOperationException("请选择有效的负责人。");
    if(original!=null&&!ids.Contains(original.Id)){original.InGantt=false;Record(d,original,"退出本次排期",original.Status,"甘特条已替换，任务与原有日期保留。");}
-   foreach(var t in chosen){string previous=Range(t),oldPriority=t.Priority;if(priority!=null)t.Priority=priority;if(!String.IsNullOrEmpty(personId))t.PersonId=personId;t.Start=Date(start);t.End=Date(end);t.InGantt=true;Record(d,t,"调整甘特图排期",t.Status,"原计划："+previous+"。任务状态保持不变。"+(oldPriority!=t.Priority?"优先级："+oldPriority+" → "+t.Priority+"。":""));}
+   foreach(var t in chosen){string previous=Range(t),oldPriority=t.Priority,oldStatus=t.Status;if(priority!=null)t.Priority=priority;if(status!=null)t.Status=status;if(!String.IsNullOrEmpty(personId))t.PersonId=personId;t.Start=start.HasValue?Date(start.Value):"";t.End=end.HasValue?Date(end.Value):"";t.InGantt=start.HasValue;
+    if(oldStatus!=t.Status)Record(d,t,"状态变更",oldStatus,"通过甘特图排期编辑修改任务状态。");
+    Record(d,t,start.HasValue?"调整甘特图排期":"清空计划时间",t.Status,"原计划："+previous+"。"+(start.HasValue?"":"任务已退出当前排期。")+(oldStatus==t.Status?"任务状态保持不变。":"任务状态："+oldStatus+" → "+t.Status+"。")+(oldPriority!=t.Priority?"优先级："+oldPriority+" → "+t.Priority+"。":""));
+   }
   }
  }
 }

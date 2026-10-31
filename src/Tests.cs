@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
@@ -16,6 +16,8 @@ namespace LaoQin.ProgressManager {
   public static void Run(string folder){
    Directory.CreateDirectory(folder);string data=Path.Combine(folder,"local-data-"+Guid.NewGuid().ToString("N"));string originalId,chosenId,pendingId,originalStart;
    TaskExportTests.Run(folder,Check,Fails);
+   GanttDragTests.Run(folder,Check,Fails);
+   GanttExportTests.Run(folder,Check);
    Func<string,string,string,string,TaskItem> sortTask=(name,status,priority,at)=>new TaskItem{Name=name,Status=status,Priority=priority,History=String.IsNullOrEmpty(at)?new List<Change>():new List<Change>{new Change{Kind="创建任务",At=at,After=status}}};
    var sortStatuses=new[]{"已关闭","已完成","已暂停","待讨论","待执行","测试中","执行中"}.Select(s=>sortTask(s,s,"P0","2026-10-20T09:00:00+08:00")).ToList();
    Check(Model.OrderTaskList(sortStatuses).Select(t=>t.Status).SequenceEqual(new[]{"执行中","测试中","待执行","待讨论","已暂停","已完成","已关闭"}),"列表优先执行中、其次测试中，其余状态按工作优先顺序显示");
@@ -37,6 +39,22 @@ namespace LaoQin.ProgressManager {
    Model.ReplaceSchedule(priorityData,priorityTarget.Id,new[]{priorityTarget.Id},DateTime.Today,DateTime.Today,priorityData.People[0].Id);
    Check(priorityTarget.Priority=="P2","rescheduling preserves priority by default");
    Fails(()=>{var invalid=Store.Decode(Store.Encode(priorityData));invalid.Tasks[0].Priority="P4";Model.Check(invalid);},"reject priority outside P0 to P3");
+   var scheduleData=Model.Sample();var originalSchedule=scheduleData.Tasks[0];var executingSchedule=scheduleData.Tasks[1];var pendingSchedule=scheduleData.Tasks[5];var untouchedSchedule=scheduleData.Tasks[2];int untouchedHistory=untouchedSchedule.History.Count;
+   Model.ReplaceSchedule(scheduleData,originalSchedule.Id,new[]{executingSchedule.Id,pendingSchedule.Id},DateTime.Today,DateTime.Today.AddDays(3),scheduleData.People[0].Id,status:"测试中");
+   Check(executingSchedule.Status=="测试中"&&pendingSchedule.Status=="测试中"&&executingSchedule.InGantt&&pendingSchedule.InGantt,"甘特图排期可统一修改选中任务的状态并保存排期");
+   Check(executingSchedule.History.Any(h=>h.Kind=="状态变更"&&h.Before=="执行中"&&h.After=="测试中")&&pendingSchedule.History.Any(h=>h.Kind=="状态变更"&&h.Before=="待执行"&&h.After=="测试中"),"甘特图状态修改为每个任务保留准确的变更前后状态");
+   Check(originalSchedule.Status=="执行中"&&!originalSchedule.InGantt&&untouchedSchedule.Status=="执行中"&&untouchedSchedule.History.Count==untouchedHistory,"统一修改状态只影响选中任务，替换退出的原任务和其他任务状态不变");
+   int changes=executingSchedule.History.Count(h=>h.Kind=="状态变更");Model.ReplaceSchedule(scheduleData,executingSchedule.Id,new[]{executingSchedule.Id},DateTime.Today,DateTime.Today.AddDays(3),scheduleData.People[0].Id);
+   Check(executingSchedule.Status=="测试中"&&executingSchedule.History.Count(h=>h.Kind=="状态变更")==changes&&Store.Decode(Store.Encode(scheduleData)).Tasks.First(t=>t.Id==executingSchedule.Id).Status=="测试中","默认保持原状态且不重复记录无变化的状态，保存恢复正确");
+   byte[] beforeInvalidStatus=Store.Encode(scheduleData);Fails(()=>Model.ReplaceSchedule(scheduleData,executingSchedule.Id,new[]{executingSchedule.Id},DateTime.Today,DateTime.Today,scheduleData.People[0].Id,status:"无效状态"),"排期拒绝无效目标状态");Check(beforeInvalidStatus.SequenceEqual(Store.Encode(scheduleData)),"无效目标状态不改变现有数据");
+   string previousRange=Model.Range(executingSchedule);
+   byte[] beforePartial=Store.Encode(scheduleData);Fails(()=>Model.ReplaceSchedule(scheduleData,executingSchedule.Id,new[]{executingSchedule.Id},null,DateTime.Today,scheduleData.People[0].Id),"拒绝只清空日期的一端");Check(beforePartial.SequenceEqual(Store.Encode(scheduleData)),"不完整时间范围不修改任务");
+   Model.ReplaceSchedule(scheduleData,executingSchedule.Id,new[]{executingSchedule.Id,pendingSchedule.Id},null,null,scheduleData.People[0].Id);
+   Check(new[]{executingSchedule,pendingSchedule}.All(t=>t.Status=="测试中"&&!t.InGantt&&t.Start==""&&t.End==""&&!Model.IsCurrentGanttTask(t)),"批量清空计划日期，保留状态并退出甘特图");
+   Check(executingSchedule.History[0].Kind=="清空计划时间"&&executingSchedule.History[0].Detail.Contains(previousRange)&&executingSchedule.History[0].Start==""&&untouchedSchedule.History.Count==untouchedHistory,"清空记录原计划且不修改未选任务");
+   Model.ReplaceSchedule(scheduleData,executingSchedule.Id,new[]{executingSchedule.Id},null,null,scheduleData.People[0].Id,status:"执行中");Model.Check(scheduleData);
+   Check(Store.Decode(Store.Encode(scheduleData)).Tasks.Single(t=>t.Id==executingSchedule.Id).Status=="执行中"&&executingSchedule.Start=="","执行中允许暂不排期并可持久化");
+   Fails(()=>{var invalid=Store.Decode(Store.Encode(scheduleData));invalid.Tasks.Single(t=>t.Id==executingSchedule.Id).PersonId="";Model.Check(invalid);},"执行中即使没有日期也必须有负责人");
    var timelineData=Model.Sample();var timelineTask=timelineData.Tasks[0];timelineTask.Note="";timelineTask.History.Clear();Model.Record(timelineData,timelineTask,"创建任务","","");timelineTask.History[0].At="2026-10-20T09:00:00+08:00";
    Check(!Model.HasInitialDetails(timelineTask)&&Model.TimelineNodeCount(timelineTask)==1,"无备注的任务仍统计创建节点");
    Model.Record(timelineData,timelineTask,"需求追加",timelineTask.Status,"核实是否通过，进度如何");timelineTask.History[0].At="2026-10-21T11:00:00+08:00";
@@ -67,8 +85,8 @@ namespace LaoQin.ProgressManager {
     string backup=Path.Combine(folder,"完整备份.json");s.Backup(backup);s.Commit(d=>d.Tasks[0].Name="A < & B \" 中文任务");Check(s.Data.Tasks[0].Name.Contains("中文"),"unicode and XML-sensitive characters round-trip in JSON");s.Restore(backup);Check(s.Data.Tasks[0].Name=="知识库对接","complete backup restore");
     s.Commit(d=>{var t=d.Tasks[2];string old=t.Status;t.Status="已暂停";Model.Record(d,t,"状态变更",old,"测试状态变更记录");});Check(s.Data.Tasks[2].History[0].Before=="执行中"&&s.Data.Tasks[2].History[0].After=="已暂停","before and after status retained in timeline");
     Exporter.Xml(Path.Combine(folder,"项目导出.xml"),s.Data,s.Data.CurrentProjectId);var xml=XDocument.Load(Path.Combine(folder,"项目导出.xml"));Check(xml.Descendants("Task").Count()==16&&xml.Descendants("Change").Count()>16,"XML contains all tasks and complete timelines");
-    var tasks=GanttView.Order(s.Data,s.Data.Tasks.Where(t=>t.InGantt),true);var pages=Exporter.Pages(tasks,tasks.Min(t=>Model.Parse(t.Start)),tasks.Max(t=>Model.Parse(t.End)));Exporter.Pdf(Path.Combine(folder,"甘特图.pdf"),s.Data,"智能业务平台",pages);Exporter.Png(Path.Combine(folder,"甘特图.png"),s.Data,"智能业务平台",new List<ChartPage>{pages[0]});Check(File.ReadAllBytes(Path.Combine(folder,"甘特图.pdf")).Take(5).SequenceEqual(Encoding.ASCII.GetBytes("%PDF-")),"PDF file header");Check(new FileInfo(Path.Combine(folder,"甘特图.png")).Length>20000,"high-resolution PNG");
-    var large=Enumerable.Range(0,25).Select(i=>new TaskItem{Id=Model.Id(),Name="跨月长任务 "+(i+1),PersonId=person,Status="执行中",Start=Model.Date(a),End=Model.Date(a.AddDays(35)),InGantt=true}).ToList();var multi=Exporter.Pages(large,a,a.AddDays(35));Check(multi.Count==9,"pagination splits both dates and task rows");Exporter.Pdf(Path.Combine(folder,"多页甘特图.pdf"),s.Data,"跨月与多任务验证",multi);Exporter.Png(Path.Combine(folder,"多页图片.zip"),s.Data,"跨月与多任务验证",multi);
+    var tasks=GanttView.Order(s.Data,s.Data.Tasks.Where(t=>t.InGantt),true);var chart=Exporter.Chart(tasks,tasks.Min(t=>Model.Parse(t.Start)),tasks.Max(t=>Model.Parse(t.End)));Exporter.Pdf(Path.Combine(folder,"甘特图.pdf"),s.Data,chart);Exporter.Png(Path.Combine(folder,"甘特图.png"),s.Data,chart);Check(File.ReadAllBytes(Path.Combine(folder,"甘特图.pdf")).Take(5).SequenceEqual(Encoding.ASCII.GetBytes("%PDF-")),"PDF file header");Check(new FileInfo(Path.Combine(folder,"甘特图.png")).Length>20000,"high-resolution PNG");
+    var large=Enumerable.Range(0,25).Select(i=>new TaskItem{Id=Model.Id(),Name="跨月长任务 "+(i+1),PersonId=person,Status="执行中",Start=Model.Date(a),End=Model.Date(a.AddDays(35)),InGantt=true}).ToList();var complete=Exporter.Chart(large,a,a.AddDays(35));Check(complete.Days==36&&complete.Tasks.Count==25,"跨月与多任务导出为一张完整图表");Exporter.Pdf(Path.Combine(folder,"完整长甘特图.pdf"),s.Data,complete);Exporter.Png(Path.Combine(folder,"完整长甘特图.png"),s.Data,complete);
     s.Commit(d=>d.Tasks[0].Note="重启持久化验证");
    }
    using(var reopened=new Store(data)){Check(reopened.Data.Tasks[0].Note=="重启持久化验证","restart reloads persisted edits");Check(!reopened.Data.Tasks[0].InGantt,"excluded original remains excluded after restart");}
