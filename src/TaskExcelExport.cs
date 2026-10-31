@@ -217,10 +217,10 @@ namespace LaoQin.ProgressManager {
    foreach(string color in new[]{"BE3445","AE610F","3267BE","64748B","258871","4F5FEF"})font(color,true,11);fonts.SetAttributeValue("count",fonts.Elements().Count());
    var fills=new XElement(S+"fills",new XElement(S+"fill",new XElement(S+"patternFill",new XAttribute("patternType","none"))),new XElement(S+"fill",new XElement(S+"patternFill",new XAttribute("patternType","gray125"))));
    foreach(string color in new[]{"354568","FFFFFF","F3F6FC"})fills.Add(new XElement(S+"fill",new XElement(S+"patternFill",new XAttribute("patternType","solid"),new XElement(S+"fgColor",new XAttribute("rgb","FF"+color)),new XElement(S+"bgColor",new XAttribute("indexed",64)))));fills.SetAttributeValue("count",fills.Elements().Count());
-   var borders=new XElement(S+"borders",new XAttribute("count",3),new XElement(S+"border",new XElement(S+"left"),new XElement(S+"right"),new XElement(S+"top"),new XElement(S+"bottom"),new XElement(S+"diagonal")),
-    new XElement(S+"border",new XElement(S+"left"),new XElement(S+"right"),new XElement(S+"top"),new XElement(S+"bottom",new XAttribute("style","hair"),new XElement(S+"color",new XAttribute("rgb","FFDCE3EF"))),new XElement(S+"diagonal")),
-    new XElement(S+"border",new XElement(S+"left"),new XElement(S+"right",new XAttribute("style","thin"),new XElement(S+"color",new XAttribute("rgb","FFFFFFFF"))),new XElement(S+"top"),new XElement(S+"bottom"),new XElement(S+"diagonal")));
-   var styles=new XElement(S+"cellXfs");styles.Add(Format(0,0,0,0,"left","center"),Format(1,0,0,0,"left","center"),Format(2,0,0,0,"left","center"),Format(3,2,2,0,"center","center"));
+   // 表头与数据区使用统一的黑色细实线，报告标题区域保持无边框。
+   var borders=new XElement(S+"borders",new XAttribute("count",2),new XElement(S+"border",new XElement(S+"left"),new XElement(S+"right"),new XElement(S+"top"),new XElement(S+"bottom"),new XElement(S+"diagonal")),
+    new XElement(S+"border",new[]{"left","right","top","bottom"}.Select(side=>new XElement(S+side,new XAttribute("style","thin"),new XElement(S+"color",new XAttribute("rgb","FF000000")))),new XElement(S+"diagonal")));
+   var styles=new XElement(S+"cellXfs");styles.Add(Format(0,0,0,0,"left","center"),Format(1,0,0,0,"left","center"),Format(2,0,0,0,"left","center"),Format(3,2,1,0,"center","center"));
    for(int stripe=0;stripe<2;stripe++)for(int kind=0;kind<12;kind++){
     int fontId=kind>=5&&kind<=8?kind-1:kind==9?8:kind==10?9:0;int number=kind==3?164:kind==4?165:0;
     styles.Add(Format(fontId,3+stripe,1,number,kind==0||kind==2?"left":"center",kind==2||kind>=9?"top":"center"));
