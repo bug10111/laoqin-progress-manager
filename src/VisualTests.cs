@@ -141,6 +141,38 @@ namespace LaoQin.ProgressManager {
    Children<TextBox>((DependencyObject)main.Content).First(t=>t.Name=="TaskSearchBox").Text="";SetTaskFilter(main,"TaskStatusFilter",Model.Statuses);SetTaskFilter(main,"TaskPriorityFilter",Model.Priorities);
    File.WriteAllText(Path.Combine(folder,"多选筛选-检查.txt"),"PASS: 状态与优先级下拉均支持逐项多选、全选与清空，组合结果正确。\nPASS: 与关键词搜索共同生效，导出弹窗保留多选条件，取消导出后选择不丢失。\n");
   }
+  static void VerifyTaskPlanFilter(MainWindow main,Store store,string folder){
+   main.TestView(false);
+   var task=store.Data.Tasks.First(t=>Model.IsDate(t.Start)&&Model.IsDate(t.End));
+   var date=Model.Parse(task.End);
+   var search=Children<TextBox>((DependencyObject)main.Content).Single(t=>t.Name=="TaskSearchBox");
+   search.Text=task.Name;SetTaskFilter(main,"TaskPriorityFilter",new[]{task.Priority});
+   var picker=Children<DateRangePicker>((DependencyObject)main.Content).Single(p=>p.Name=="TaskPlanFilter");
+   picker.Preview();picker.SelectDate(date.AddDays(1));
+   if(!picker.ApplyDraft())throw new Exception("无法应用计划时间筛选");
+   main.UpdateLayout();if(Texts((DependencyObject)main.Content).Contains(task.Name))throw new Exception("日期不重叠的任务仍在列表中");
+   picker.Preview();picker.SelectDate(date);picker.SelectDate(date);
+   if(!picker.ApplyDraft())throw new Exception("无法应用单日计划时间筛选");
+   main.UpdateLayout();if(!Texts((DependencyObject)main.Content).Contains(task.Name))throw new Exception("计划结束当天的任务未显示");
+   double originalWidth=main.Width,originalHeight=main.Height;main.Width=main.MinWidth;main.Height=main.MinHeight;main.UpdateLayout();
+   Save((FrameworkElement)main.Content,Path.Combine(folder,"计划时间筛选-最小窗口.png"));main.Width=originalWidth;main.Height=originalHeight;
+   bool excelOpened=false,ganttOpened=false;
+   Ui.TestDialogReady=w=>{excelOpened=true;if(!Texts((DependencyObject)w.Content).Any(t=>t.Contains("全部 1 项匹配任务")&&t.Contains("计划时间："+task.End+" — "+task.End)))throw new Exception("Excel 导出未沿用计划时间筛选");w.Close();};
+   Children<Button>((DependencyObject)main.Content).First(b=>b.Content as string=="↓ 导出 Excel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+   Ui.TestDialogReady=w=>{
+    ganttOpened=true;
+    var labels=Texts((DependencyObject)w.Content);if(!labels.Contains("任务列表筛选结果")||!labels.Any(t=>t.StartsWith(date.ToString("yyyy.MM.dd")+" — "+date.ToString("yyyy.MM.dd"))&&t.Contains("1 项任务")))throw new Exception("甘特图导出未使用列表任务与日期范围");
+    Children<ComboBox>((DependencyObject)w.Content).Single().SelectedIndex=2;
+    if(!Texts((DependencyObject)w.Content).Any(t=>t.Contains("匹配任务的原始计划日期")))throw new Exception("XML 导出未显示筛选范围");
+    w.Close();
+   };
+   Children<Button>((DependencyObject)main.Content).First(b=>b.Content as string=="↓ 导出甘特图").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+   if(!excelOpened||!ganttOpened||picker.Start!=date)throw new Exception("导出入口未打开或筛选日期丢失");
+   Children<Button>(picker).Single(b=>b.Content as string=="清除").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+   search.Text="无初始说明的新任务";SetTaskFilter(main,"TaskPriorityFilter",Model.Priorities);main.UpdateLayout();
+   if(picker.Start.HasValue||!Texts((DependencyObject)main.Content).Contains("无初始说明的新任务"))throw new Exception("清除筛选后未恢复无计划时间的任务");
+   search.Text="";
+  }
   static void VerifyGanttStatusChange(MainWindow main,Store store,string folder){
    main.TestView(true);SetChartFilter(main,new[]{"执行中"});main.UpdateLayout();
    var original=store.Data.Tasks.First(t=>t.InGantt&&t.Status=="执行中");string id=original.Id;
@@ -262,7 +294,7 @@ namespace LaoQin.ProgressManager {
      VerifyCreateAndAppend(main,store,folder);VerifyEditableNote(main,store,folder);main.Refresh();main.TestView(false);SetTaskFilter(main,"TaskPriorityFilter",new[]{"P3"});main.UpdateLayout();var filtered=Texts((DependencyObject)main.Content);if(!filtered.Contains("无初始说明的新任务")||filtered.Contains("知识库对接（界面保存验证）"))throw new Exception("Priority filter did not restrict tasks");Save((FrameworkElement)main.Content,Path.Combine(folder,"优先级筛选.png"));SetTaskFilter(main,"TaskPriorityFilter",Model.Priorities);
      VerifyGanttExport(main,store,folder);
      Ui.TestDialogReady=w=>{w.UpdateLayout();var pathText=Children<System.Windows.Controls.TextBlock>((DependencyObject)w.Content).FirstOrDefault(t=>t.Text==store.DirectoryPath);if(pathText!=null)pathText.Text="%LOCALAPPDATA%\\LaoQinProgress";w.UpdateLayout();Save((FrameworkElement)w.Content,Path.Combine(folder,"全部数据导入导出.png"));var names=Children<Button>((DependencyObject)w.Content).Select(b=>b.Content as string).ToList();if(!names.Contains("导出全部数据")||!names.Contains("导入全部数据"))throw new Exception("Missing full-data import/export buttons");w.Close();};Dialogs.Backups(main,store);
-     VerifyTaskExcelExport(main,store,folder);VerifyMultiFilters(main,store,folder);VerifyTestingStatus(main,store,folder);VerifyDateRange(main,store,folder);VerifyGanttStatusChange(main,store,folder);VerifyClearDates(main,store,folder);
+     VerifyTaskExcelExport(main,store,folder);VerifyMultiFilters(main,store,folder);VerifyTaskPlanFilter(main,store,folder);VerifyTestingStatus(main,store,folder);VerifyDateRange(main,store,folder);VerifyGanttStatusChange(main,store,folder);VerifyClearDates(main,store,folder);
      main.TestView(true);main.Width=1040;main.Height=720;main.UpdateLayout();Save((FrameworkElement)main.Content,Path.Combine(folder,"最小窗口.png"));store.Commit(d=>{foreach(var id in d.Projects.Select(p=>p.Id).ToArray())Model.DeleteProject(d,id);});main.Width=1380;main.Height=920;main.Refresh();main.UpdateLayout();Save((FrameworkElement)main.Content,Path.Combine(folder,"无项目状态.png"));main.TestView(false);main.UpdateLayout();if(store.Data.Projects.Count!=0||store.Data.Tasks.Count!=0)throw new Exception("Zero-project workspace not empty");
      Ui.TestDialogReady=w=>{Children<TextBox>((DependencyObject)w.Content).First().Text="重新创建的项目";Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="确定").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};Children<Button>((DependencyObject)main.Content).First(b=>b.Content as string=="＋ 新建第一个项目").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));if(store.Data.Projects.Count!=1||store.Data.Projects[0].Name!="重新创建的项目")throw new Exception("Creating project from empty workspace failed");
      File.WriteAllText(Path.Combine(folder,"界面检查.txt"),"PASS: Native WPF layout rendered at normal and minimum sizes.\nPASS: 详情与节点标签正常显示，连续追加后返回列表自动更新，并已渲染最小窗口。\nPASS: Creation, requirements and operations share one chronological timeline.\nPASS: Task creation and requirement append forms save records, including tasks without initial details.\nPASS: Initial details appear once inside the creation node.\nPASS: Task and status multiselect connected; all 16 tasks selected across multiple statuses.\nPASS: Schedule form save button replaced original bar and scheduled selected tasks.\nPASS: Task editor save button persisted edited task name.\nPASS: Timeline, task editor, schedule editor and full-data dialogs rendered.\nPASS: Zero-project workspace renders both task and Gantt views.\nPASS: Empty-workspace new-project button saves a usable project.\n");

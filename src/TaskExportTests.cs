@@ -94,6 +94,25 @@ namespace LaoQin.ProgressManager {
    string multiFile=Path.Combine(folder,"任务导出-多选筛选.xlsx");TaskExcelExporter.Export(multiFile,data,multi,new[]{TaskExportField.Name,TaskExportField.Status,TaskExportField.Priority});var multiSheet=Part(multiFile,"xl/worksheets/sheet1.xml");
    check(Text(multiSheet,"A4")==first.Name.Replace("_x0041_","_x005F_x0041_")&&Text(multiSheet,"A5")==data.Tasks[25].Name&&multiSheet.Descendants(S+"row").Count(r=>(int)r.Attribute("r")>=4)==2&&!String.Concat(multiSheet.Descendants(S+"t").Select(t=>t.Value)).Contains("状态：执行中、已完成"),"Excel 仅导出多选匹配结果且保持列表排序，不显示筛选摘要");
    string multiPages=Path.Combine(folder,"任务导出-多选全部分页.xlsx");TaskExcelExporter.Export(multiPages,data,new TaskQuery("current",new[]{"执行中","待执行"},new[]{"P0","P1"},""),new[]{TaskExportField.Name});check(Part(multiPages,"xl/worksheets/sheet1.xml").Descendants(S+"row").Count(r=>(int)r.Attribute("r")>=4)==25,"多选筛选导出全部 25 项匹配任务，包含所有分页");
+
+   var dated=Store.Decode(unchanged);
+   for(int i=0;i<=20;i++){
+    dated.Tasks[i].Start=i==20?"2026-11-03":"2026-10-20";
+    dated.Tasks[i].End=i==20?"2026-11-10":"2026-10-31";
+   }
+   dated.Tasks[21].Start="2026-10-20";dated.Tasks[21].End="2026-10-30";
+   dated.Tasks[22].Start="2026-11-04";dated.Tasks[22].End="2026-11-10";
+   dated.Tasks[26].Start="2026-10-31";dated.Tasks[26].End="2026-11-03";
+   var plan=new TaskQuery("current",Model.Statuses,Model.Priorities,"",new DateTime(2026,10,31),new DateTime(2026,11,3));
+   var matches=plan.Apply(dated);
+   check(matches.Count==21&&new HashSet<string>(matches.Select(t=>t.Id)).SetEquals(dated.Tasks.Take(21).Select(t=>t.Id)),"计划时间筛选包含两端重叠任务，排除范围外、无日期及其他项目任务");
+   string planFile=Path.Combine(folder,"任务导出-计划时间.xlsx");
+   TaskExcelExporter.Export(planFile,dated,plan,new[]{TaskExportField.Name});
+   check(Part(planFile,"xl/worksheets/sheet1.xml").Descendants(S+"row").Count(r=>(int)r.Attribute("r")>=4)==21,"Excel 导出跨页的全部计划时间匹配任务");
+   string planXml=Path.Combine(folder,"项目导出-计划时间.xml");
+   Exporter.Xml(planXml,dated,plan.ProjectId,matches);
+   var exported=XDocument.Load(planXml).Descendants("Task").ToList();
+   check(exported.Select(t=>(string)t.Attribute("id")).SequenceEqual(matches.Select(t=>t.Id))&&exported.Select(t=>(string)t.Element("Start")).SequenceEqual(matches.Select(t=>t.Start)),"筛选后的 XML 保留匹配任务和原始计划日期");
   }
  }
 }

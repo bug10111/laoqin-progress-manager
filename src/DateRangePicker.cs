@@ -17,6 +17,7 @@ namespace LaoQin.ProgressManager {
  public sealed class DateRangePicker:StackPanel {
   sealed class DayCell {public DateTime Date;public Button Button;}
   readonly Button startButton,endButton;readonly TextBlock startValue,endValue,summary;
+  readonly bool filterMode;
   readonly Popup popup;readonly Button clearButton;
   FrameworkElement popupView;TextBox startInput,endInput;TextBlock instruction,error,draftSummary;Button applyButton,previous,next;Grid months;
   readonly List<DayCell> days=new List<DayCell>();
@@ -25,16 +26,29 @@ namespace LaoQin.ProgressManager {
   public DateTime? End {get;private set;}
   public event Action Changed;
 
-  public DateRangePicker(string start,string end){
+  public DateRangePicker(string start,string end,bool filterMode=false){
+   this.filterMode=filterMode;
    Start=Model.IsDate(start)?(DateTime?)Model.Parse(start):null;End=Model.IsDate(end)?(DateTime?)Model.Parse(end):null;
-   var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(24)});fields.ColumnDefinitions.Add(new ColumnDefinition());
-   startValue=Ui.Text("",14,null,true);endValue=Ui.Text("",14,null,true);
-   startButton=DateButton("开始日期",startValue,()=>Open(true));endButton=DateButton("结束日期",endValue,()=>Open(false));
-   fields.Children.Add(startButton);var arrow=Ui.Text("→",15,Ui.Muted);arrow.HorizontalAlignment=HorizontalAlignment.Center;Grid.SetColumn(arrow,1);fields.Children.Add(arrow);Grid.SetColumn(endButton,2);fields.Children.Add(endButton);
-   Children.Add(new Border{Child=fields,Background=Brushes.White,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8)});
-   summary=Ui.Text("",11,Ui.Muted);summary.Margin=new Thickness(1,7,0,0);var summaryRow=new DockPanel();clearButton=Ui.Button("清空时间",()=>{popup.IsOpen=false;SetRange(null,null);});clearButton.FontSize=11;clearButton.Foreground=Ui.Brand;clearButton.Padding=new Thickness(2,0,2,0);clearButton.Margin=new Thickness(8,7,0,0);clearButton.BorderThickness=new Thickness(0);clearButton.ToolTip="清空起止日期，保存后取消当前排期";DockPanel.SetDock(clearButton,Dock.Right);summaryRow.Children.Add(clearButton);summaryRow.Children.Add(summary);Children.Add(summaryRow);
+   clearButton=Ui.Button(filterMode?"清除":"清空时间",()=>{popup.IsOpen=false;SetRange(null,null);});
+   clearButton.FontSize=11;clearButton.Foreground=Ui.Brand;clearButton.BorderThickness=new Thickness(0);
+   if(filterMode){
+    Orientation=Orientation.Horizontal;
+    startButton=Ui.Button("全部",()=>Open(true));startButton.MinHeight=36;
+    startButton.ToolTip="筛选与所选日期有重叠的任务，包含起止当天";
+    clearButton.ToolTip="清除计划时间筛选";clearButton.Padding=new Thickness(7,4,7,4);
+    Children.Add(startButton);Children.Add(clearButton);
+   }else{
+    var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(24)});fields.ColumnDefinitions.Add(new ColumnDefinition());
+    startValue=Ui.Text("",14,null,true);endValue=Ui.Text("",14,null,true);
+    startButton=DateButton("开始日期",startValue,()=>Open(true));endButton=DateButton("结束日期",endValue,()=>Open(false));
+    fields.Children.Add(startButton);var arrow=Ui.Text("→",15,Ui.Muted);arrow.HorizontalAlignment=HorizontalAlignment.Center;Grid.SetColumn(arrow,1);fields.Children.Add(arrow);Grid.SetColumn(endButton,2);fields.Children.Add(endButton);
+    Children.Add(new Border{Child=fields,Background=Brushes.White,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8)});
+    summary=Ui.Text("",11,Ui.Muted);summary.Margin=new Thickness(1,7,0,0);var summaryRow=new DockPanel();
+    clearButton.Padding=new Thickness(2,0,2,0);clearButton.Margin=new Thickness(8,7,0,0);clearButton.ToolTip="清空起止日期，保存后取消当前排期";
+    DockPanel.SetDock(clearButton,Dock.Right);summaryRow.Children.Add(clearButton);summaryRow.Children.Add(summary);Children.Add(summaryRow);
+   }
    popup=new Popup{PlacementTarget=this,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true,VerticalOffset=6,PopupAnimation=PopupAnimation.Fade};
-   popup.Closed+=(s,e)=>{startButton.Background=Brushes.White;endButton.Background=Brushes.White;};
+   popup.Closed+=(s,e)=>{startButton.Background=Brushes.White;if(endButton!=null)endButton.Background=Brushes.White;};
    Unloaded+=(s,e)=>popup.IsOpen=false;UpdateField();
   }
   static Button DateButton(string caption,TextBlock value,Action click){
@@ -46,15 +60,20 @@ namespace LaoQin.ProgressManager {
    Start=start.HasValue?(DateTime?)start.Value.Date:null;End=end.HasValue?(DateTime?)end.Value.Date:null;UpdateField();if(Changed!=null)Changed();
   }
   static string DateText(DateTime? date){return date.HasValue?date.Value.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture):"";}
-  static string RangeSummary(DateTime? start,DateTime? end){return start.HasValue&&end.HasValue?"共 "+((end.Value-start.Value).Days+1)+" 天 · 包含结束当天":"尚未安排 · 可重新选择计划时间";}
+  string RangeSummary(DateTime? start,DateTime? end){return start.HasValue&&end.HasValue?"共 "+((end.Value-start.Value).Days+1)+" 天 · 包含结束当天":filterMode?"全部计划时间":"尚未安排 · 可重新选择计划时间";}
   void UpdateField(){
+   clearButton.Visibility=Start.HasValue||End.HasValue?Visibility.Visible:Visibility.Collapsed;
+   if(filterMode){
+    string range=Start.HasValue?DateText(Start)+" — "+DateText(End):"全部";
+    startButton.Content=range+"  ▾";AutomationProperties.SetName(startButton,"计划时间筛选："+range);
+    return;
+   }
    startValue.Text=Start.HasValue?DateText(Start):"选择开始日期";endValue.Text=End.HasValue?DateText(End):"选择结束日期";
    startValue.Foreground=Start.HasValue?Ui.Ink:Ui.Muted;endValue.Foreground=End.HasValue?Ui.Ink:Ui.Muted;summary.Text=RangeSummary(Start,End);
-   clearButton.Visibility=Start.HasValue||End.HasValue?Visibility.Visible:Visibility.Collapsed;
    AutomationProperties.SetName(startButton,"开始日期："+(Start.HasValue?DateText(Start):"未选择"));AutomationProperties.SetName(endButton,"结束日期："+(End.HasValue?DateText(End):"未选择"));
   }
   internal void Open(bool editStart){
-   BeginEdit(editStart);popup.IsOpen=true;startButton.Background=editStart?Ui.BrandSoft:Brushes.White;endButton.Background=editStart?Brushes.White:Ui.BrandSoft;
+   BeginEdit(editStart);popup.IsOpen=true;startButton.Background=editStart?Ui.BrandSoft:Brushes.White;if(endButton!=null)endButton.Background=editStart?Brushes.White:Ui.BrandSoft;
    Dispatcher.BeginInvoke(new Action(()=>{if(popup.IsOpen){var input=selectingStart?startInput:endInput;input.Focus();input.SelectAll();}}),System.Windows.Threading.DispatcherPriority.Input);
   }
   internal FrameworkElement Preview(){BeginEdit(true);popupView.Measure(new Size(562,Double.PositiveInfinity));popupView.Arrange(new Rect(new Point(),popupView.DesiredSize));return popupView;}

@@ -58,10 +58,10 @@ namespace LaoQin.ProgressManager {
     long xref=output.Position;Write(output,"xref\n0 "+offsets.Count+"\n0000000000 65535 f \n");for(int i=1;i<offsets.Count;i++)Write(output,offsets[i].ToString("D10",CultureInfo.InvariantCulture)+" 00000 n \n");Write(output,"trailer\n<< /Size "+offsets.Count+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF\n");return output.ToArray();
    }
   }
-  public static void Xml(string path,AppData d,string projectId){
+  public static void Xml(string path,AppData d,string projectId,IEnumerable<TaskItem> selectedTasks=null){
    var project=d.Projects.First(x=>x.Id==projectId);var root=new XElement("LaoQinProject",new XAttribute("schemaVersion","1"),new XAttribute("exportedAt",DateTimeOffset.Now.ToString("o")),new XAttribute("dateConvention","inclusive-calendar-days"),new XElement("Project",new XAttribute("id",project.Id),new XElement("Name",project.Name)));
    var people=new XElement("People");foreach(var p in d.People)people.Add(new XElement("Person",new XAttribute("id",p.Id),new XAttribute("deleted",p.Deleted),new XElement("Name",p.Name)));root.Add(people);
-   var tasks=new XElement("Tasks");foreach(var t in d.Tasks.Where(x=>x.ProjectId==projectId)){
+   var tasks=new XElement("Tasks");foreach(var t in (selectedTasks??d.Tasks).Where(x=>x.ProjectId==projectId)){
     var node=new XElement("Task",new XAttribute("id",t.Id),new XElement("Name",t.Name),new XElement("Status",t.Status),new XElement("Priority",t.Priority),new XElement("PersonId",t.PersonId??""),new XElement("PersonName",Model.PersonName(d,t.PersonId)),new XElement("Start",t.Start??""),new XElement("End",t.End??""),new XElement("InCurrentGantt",Model.IsCurrentGanttTask(t)),new XElement("Note",t.Note??""));
     var history=new XElement("Timeline");foreach(var h in t.History)history.Add(new XElement("Change",new XAttribute("at",h.At??""),new XElement("Kind",h.Kind??""),new XElement("BeforeStatus",h.Before??""),new XElement("AfterStatus",h.After??""),new XElement("Priority",h.Priority??""),new XElement("TaskName",h.Name??""),new XElement("PersonName",h.PersonName??""),new XElement("Start",h.Start??""),new XElement("End",h.End??""),new XElement("Detail",h.Detail??"")));node.Add(history);tasks.Add(node);
    }

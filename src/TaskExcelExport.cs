@@ -18,18 +18,24 @@ namespace LaoQin.ProgressManager {
  // 列表与导出共享查询，分页只在界面显示时应用。
  public sealed class TaskQuery {
   public readonly string ProjectId,Status,Priority,Search;
+  public readonly DateTime? PlanStart,PlanEnd;
   readonly HashSet<string> statuses,priorities;
   public TaskQuery(string projectId,string status,string priority,string search):this(projectId,status=="全部"?Model.Statuses:new[]{status},priority=="全部"?Model.Priorities:new[]{priority},search){}
-  public TaskQuery(string projectId,IEnumerable<string> selectedStatuses,IEnumerable<string> selectedPriorities,string search){
+  public TaskQuery(string projectId,IEnumerable<string> selectedStatuses,IEnumerable<string> selectedPriorities,string search,DateTime? planStart=null,DateTime? planEnd=null){
+   PlanStart=planStart.HasValue?(DateTime?)planStart.Value.Date:null;PlanEnd=planEnd.HasValue?(DateTime?)planEnd.Value.Date:null;
+   if(PlanStart.HasValue!=PlanEnd.HasValue||PlanStart>PlanEnd)throw new ArgumentException("请填写正确、完整的计划时间段。");
    ProjectId=projectId;statuses=new HashSet<string>(selectedStatuses??Model.Statuses);priorities=new HashSet<string>(selectedPriorities??Model.Priorities);Search=(search??"").Trim();
    Status=FilterSummary(Model.Statuses,statuses);Priority=FilterSummary(Model.Priorities,priorities);
   }
   static string FilterSummary(string[] options,HashSet<string> selected){return selected.SetEquals(options)?"全部":selected.Count==0?"未选择":String.Join("、",options.Where(selected.Contains));}
   public List<TaskItem> Apply(AppData data){
-   return Model.OrderTaskList(data.Tasks.Where(t=>t.ProjectId==ProjectId&&statuses.Contains(t.Status)&&priorities.Contains(t.Priority)&&(Search.Length==0||Contains(t.Name)||Contains(t.Note)))).ToList();
+   return Model.OrderTaskList(data.Tasks.Where(t=>t.ProjectId==ProjectId&&statuses.Contains(t.Status)&&priorities.Contains(t.Priority)&&(Search.Length==0||Contains(t.Name)||Contains(t.Note))&&MatchesPlanRange(t))).ToList();
+  }
+  bool MatchesPlanRange(TaskItem task){
+   return !PlanStart.HasValue||Model.IsDate(task.Start)&&Model.IsDate(task.End)&&Model.Parse(task.Start)<=PlanEnd.Value&&Model.Parse(task.End)>=PlanStart.Value;
   }
   bool Contains(string value){return !String.IsNullOrEmpty(value)&&value.IndexOf(Search,StringComparison.CurrentCultureIgnoreCase)>=0;}
-  public string Summary(AppData data){var project=data.Projects.First(x=>x.Id==ProjectId);return "项目："+project.Name+"；状态："+Status+"；优先级："+Priority+"；关键词："+(Search.Length==0?"无":Search);}
+  public string Summary(AppData data){var project=data.Projects.First(x=>x.Id==ProjectId);return "项目："+project.Name+"；状态："+Status+"；优先级："+Priority+"；关键词："+(Search.Length==0?"无":Search)+(PlanStart.HasValue?"\n计划时间："+Model.Date(PlanStart.Value)+" — "+Model.Date(PlanEnd.Value):"");}
  }
  public enum TaskExportField { Number,Project,Name,Priority,Status,Person,Start,End,InGantt,Note,Requirements,Created,Updated }
  public sealed class TaskExportColumn {
