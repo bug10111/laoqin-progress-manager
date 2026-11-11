@@ -35,7 +35,7 @@ namespace LaoQin.ProgressManager {
      if(filteredTasks!=null){
       var ordered=GanttView.Order(store.Data,filteredTasks,chart.GroupPeople);
       double timelineWidth=166+((end-start).Days+1)*(chart.TimelineWidth-166)/chart.Days;
-      output=Exporter.Chart(ordered,start,end,chart.IncludeDetails,chart.GroupPeople,timelineWidth);
+      output=Exporter.Chart(ordered,start,end,chart.IncludeDetails,chart.GroupPeople,timelineWidth,chart.TimelineTypes);
      }
      Exporter.RasterScale(output);
     }
@@ -52,7 +52,7 @@ namespace LaoQin.ProgressManager {
   }
   public static void Help(Window owner,Store store){
    var w=Ui.Dialog(owner,"使用说明",520);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text("老秦 · 离线项目与甘特图",21,null,true));
-   var excelHelp=Ui.Text("在任务列表中选择计划时间段，可筛出计划日期与之重叠的任务，包含起止当天。点击“清除”恢复不限日期。设定计划时间后，从任务列表导出的 PDF、PNG 和 XML 使用全部匹配任务。\n在任务列表点击“导出 Excel”，首次默认勾选全部表头。拖动左侧 ≡ 调整列顺序。成功导出后记住顺序和勾选，重启后保留。“恢复默认”重置顺序并全选。导出当前项目、状态、优先级、计划时间和关键词匹配的全部任务（包含所有分页）。无筛选时导出当前项目全部任务。追加需求按时间逐行展示，同一任务的基础信息合并。取消勾选的字段不导出，取消弹窗不生成文件，当前筛选条件保持不变。",12,Ui.Muted);excelHelp.Margin=new Thickness(0,17,0,0);p.Children.Add(excelHelp);
+   var excelHelp=Ui.Text("在任务列表中选择计划时间段，可筛出计划日期与之重叠的任务，包含起止当天。点击“清除”恢复不限日期。设定计划时间后，从任务列表导出的 PDF、PNG 和 XML 使用全部匹配任务。\n在任务列表点击“导出 Excel”，首次默认勾选全部表头。拖动左侧 ≡ 调整列顺序。成功导出后记住顺序和勾选，重启后保留。“恢复默认”重置顺序并全选。导出当前项目、状态、优先级、计划时间和关键词匹配的全部任务（包含所有分页）。无筛选时导出当前项目全部任务。任务时间线逐行列出完整历史，同一任务的基础信息合并。取消勾选的字段不导出，取消弹窗不生成文件，当前筛选条件保持不变。",12,Ui.Muted);excelHelp.Margin=new Thickness(0,17,0,0);p.Children.Add(excelHelp);
    foreach(var text in new[]{"1. 左侧项目下拉可切换、新增和删除项目，可删除最后一个项目。删除时清除该项目的任务、排期和时间线，共享人员及备份保留。","2. 新建任务后，通过列表“查看”打开时间线，通过“编辑”修改信息。设为执行中时必须选择负责人，计划日期可留空。","3. 甘特图默认显示执行中。顶部使用一个状态多选下拉，单选、多选和全选均在其中完成；有负责人和完整计划日期的任务会按所选状态显示，已明确退出排期的任务除外。已完成视图也包含有日期的已完成任务。PDF / PNG 导出和图表详情沿用当前状态筛选。","4. 同一人的甘特条按计划天数从短到长排列。Shift + 单击任务条或名称可增减选择，拖选中条中间可整组移动；拖左、右边缘仅修改当前任务的起止日期。松开统一保存，Esc 取消。单击仍打开排期编辑窗口，先按状态筛选，再按任务名称搜索并多选。搜索后点击“全选”只选择匹配结果；保存时选中的任务替换当前甘特条。原任务若未再次选中，则退出本次排期，任务、原日期和历史记录保留。","5. 同一任务在当前排期中只有一个甘特条。多选任务使用同一负责人和起止日期；默认保持原状态，也可在“修改任务状态”中统一修改并记录变更。所有日期范围均可清空；保存后退出当前排期，保留任务状态及原计划历史。日期按自然日计算，包含结束当天；周六、周日单独标注。","6. PDF / PNG 沿用当前甘特图的日期、筛选、分组、任务顺序、缩放列宽和详情，完整保留滚动区域内容。PDF 为单张连续页面，PNG 为单张完整图片，只生成一个文件。XML 为通用数据格式，并非 Microsoft Project 的专用格式。","7. 左侧“数据导入导出”可导出全部项目、人员、任务、排期和时间线。导入全部数据会覆盖当前数据，并自动备份导入前的数据。首次启动的示例项目可自行删除。","快捷键：Ctrl+N 新建任务，Ctrl+E 导出甘特图。甘特图预览：日期栏固定顶部、人员列固定左侧，同组人员姓名吸顶；Shift + 滚轮缩放时间轴（25%～400%），底部滚动条可左右查看，重置按钮恢复 100%。"}){var t=Ui.Text(text,12,Ui.Muted);t.Margin=new Thickness(0,17,0,0);p.Children.Add(t);}var close=Ui.Button("知道了",()=>w.Close(),true);close.Margin=new Thickness(0,24,0,0);p.Children.Add(close);w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();
   }
  }

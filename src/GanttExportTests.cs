@@ -21,10 +21,14 @@ namespace LaoQin.ProgressManager {
    var data=Model.Sample();var start=new DateTime(2026,10,26);var tasks=data.Tasks.Take(3).ToList();string[] names={"小程序备案","合并租户权限体系","录音设备调研"};
    for(int i=0;i<tasks.Count;i++){tasks[i].Name=names[i];tasks[i].Start=Model.Date(start.AddDays(i*4));tasks[i].End=Model.Date(start.AddDays(i*4+16));tasks[i].Status="执行中";}
    var items=tasks.Select((t,i)=>new TaskLegendItem{Number=i+1,Task=t}).ToList();var layout=GanttView.LayoutLegend(items,900);
-   check(layout.Count==3&&layout.All(s=>s.Bounds.Top==layout[0].Bounds.Top)&&layout[2].Bounds.Right<=900,"任务名称说明优先横排，编号和名称保持完整项");
+   check(layout.Count==3&&layout.Zip(layout.Skip(1),(a,b)=>a.Bounds.Bottom<b.Bounds.Top).All(x=>x)&&layout.All(s=>s.Bounds.Left==0&&s.Bounds.Right<=900),"任务变更记录按编号纵向排列");
    tasks[1].Name="合并租户权限体系，检查不同角色下的数据权限、功能权限和历史记录。"+new string('测',180);
    foreach(double width in new[]{210.0,650.0,900.0}){layout=GanttView.LayoutLegend(items,width);check(layout.All(s=>s.Bounds.Left>=0&&s.Bounds.Right<=width+.01)&&!layout.Any(a=>layout.Any(b=>a!=b&&Rect.Intersect(a.Bounds,b.Bounds).Width>0&&Rect.Intersect(a.Bounds,b.Bounds).Height>0)),"任务说明在宽度 "+width+" 下自动换行，不重叠或超出右边界");}
-   var gridItems=Enumerable.Range(0,20).Select(i=>new TaskLegendItem{Number=i+1,Task=new TaskItem{Name=i%3==0?"不同长度的任务说明，编号应该在多行之间对齐":"任务 "+(i+1)}}).ToList();layout=GanttView.LayoutLegend(gridItems,948);check(layout.Count==20&&layout.Select(p=>p.Bounds.X).Distinct().Count()==4&&layout.All(p=>p.Bounds.X==layout[(p.Item.Number-1)%4].Bounds.X)&&layout.Select(p=>p.Item.Number).SequenceEqual(Enumerable.Range(1,20)),"20 项说明按编号横向顺序填入四个等宽列，各行数字纵向对齐");
+   var gridItems=Enumerable.Range(0,20).Select(i=>new TaskLegendItem{Number=i+1,Task=new TaskItem{Name=i%3==0?"不同长度的任务说明，编号应该在多行之间对齐":"任务 "+(i+1)}}).ToList();layout=GanttView.LayoutLegend(gridItems,948);check(layout.Count==20&&layout.All(p=>p.Bounds.X==0)&&layout.Select(p=>p.Item.Number).SequenceEqual(Enumerable.Range(1,20)),"20 项任务记录按编号单列展示");
+   Model.Record(data,tasks[0],"状态变更","待执行","","环境恢复，继续联调。\n"+new string('测',240));
+   Model.Record(data,tasks[0],"任务修改",tasks[0].Status,"优先级：P0 → P1");
+   var narrow=GanttView.LayoutLegend(items,210);var wide=GanttView.LayoutLegend(items,900);
+   check(narrow[0].Bounds.Height>wide[0].Bounds.Height&&narrow[0].Bounds.Bottom<narrow[1].Bounds.Top,"长备注换行后增加任务详情高度，后续任务不会重叠");
    var before=GanttView.LayoutBarLabel(new Rect(980,79,55,32),170,1080,"录音设备调研","1天",true);var after=GanttView.LayoutBarLabel(new Rect(170,79,55,32),170,1080,"首日任务","1天",false);var above=GanttView.LayoutBarLabel(new Rect(170,79,900,32),170,1080,"覆盖整个日期范围的任务","14天",true);var preferred=GanttView.LayoutBarLabel(new Rect(600,79,55,32),170,1080,"一天任务","1天",true);
    check(before.Label.Left>before.Bar.Right&&before.Bar.Width==55&&before.TitleWidth>=72,"最后一天的名称仍放在条后，保持真实条宽和完整名称");check(after.Label.Left>after.Bar.Right,"首日任务名称统一放条后");check(preferred.Label.Left>preferred.Bar.Right,"两侧空间都足够时名称仍放条后");check(above.Label.Left>above.Bar.Right&&above.Bar.Width==900&&above.Label.Top>above.Bar.Top,"覆盖整个日期范围的任务名称也放条后，不换到上方");
    foreach(var placement in new[]{before,after,above,GanttView.LayoutBarLabel(new Rect(1078,79,2,32),170,1080,"右边界任务","100天",true)})check(placement.Label.Left>placement.Bar.Right&&placement.Duration.Left>=170&&(!placement.Label.IntersectsWith(placement.Bar))&&!placement.Label.IntersectsWith(placement.Duration),"名称和时长始终留在条后，互不重叠，右侧画布可扩展");
@@ -34,6 +38,27 @@ namespace LaoQin.ProgressManager {
     check(chart.Start==start&&chart.Days==14&&chart.Tasks.SequenceEqual(view.Ordered())&&chart.Tasks.Count==3&&chart.GroupPeople==group&&chart.IncludeDetails==details&&chart.TimelineWidth==view.TimelineWidth&&chart.Width==view.Width&&Exporter.Height(chart)==view.Height,"导出完整保留当前日期、筛选任务行、分组、顺序、87% 列宽和详情："+group+" / "+details);
     var actual=new RenderTargetBitmap((int)Math.Ceiling(view.Width),(int)Math.Ceiling(view.Height),96,96,PixelFormats.Pbgra32);var background=new DrawingVisual();using(var context=background.RenderOpen())context.DrawRectangle(Brushes.White,null,new Rect(0,0,actual.PixelWidth,actual.PixelHeight));var referenceVisual=new ContainerVisual();referenceVisual.Children.Add(background);referenceVisual.Children.Add(view);actual.Render(referenceVisual);check(Pixels(actual).SequenceEqual(Pixels(Exporter.Bitmap(data,chart,1))),"导出与原生甘特图逐像素一致："+group+" / "+details);
    }
+   var noteTypes=new[]{TaskTimelineTypes.Notes};
+   var notesView=new GanttView(data,tasks,start,14,true,true,noteTypes);
+   var notesChart=Exporter.CurrentView(notesView);
+   var allChart=Exporter.Chart(notesChart.Tasks,start,start.AddDays(13),true,true,notesChart.TimelineWidth);
+   var compactChart=Exporter.Chart(notesChart.Tasks,start,start.AddDays(13),false,true,notesChart.TimelineWidth);
+   check(notesChart.TimelineTypes.SetEquals(noteTypes)&&notesChart.Tasks.SequenceEqual(allChart.Tasks)
+    &&Exporter.Height(notesChart)==notesView.Height&&notesView.Height<Exporter.Height(allChart),
+    "只选备注时甘特图导出沿用所选类型和详情高度，保留原任务行");
+   var withNote=new TaskItem{Name="带备注的任务"};
+   Model.Record(data,withNote,"创建任务","","");
+   Model.Record(data,withNote,"任务修改","","优先级：P0 → P1","保留随操作保存的备注");
+   Model.Record(data,withNote,"追加备注","","","保留独立追加的备注");
+   var noteItems=new List<TaskLegendItem>{new TaskLegendItem{Number=1,Task=withNote}};
+   var noteLayout=GanttView.LayoutLegend(noteItems,900,notesChart.TimelineTypes).Single();
+   check(noteLayout.Lines.Count(line=>line!=null)==4,
+    "仅备注时显示附带备注和独立备注的时间及正文，过滤无备注记录和未选类型的变更明细");
+   var noMatch=GanttView.LayoutLegend(noteItems,900,new HashSet<string>{"清空计划时间"}).Single();
+   check(noMatch.Lines.Count==1,"选中的类型没有匹配记录时显示空态");
+   notesView.SetTimelineTypes(new string[0]);
+   check(!notesView.ShowDetails&&notesView.Height==Exporter.Height(compactChart)
+    &&!Exporter.CurrentView(notesView).IncludeDetails,"清空时间线类型后隐藏预览和导出的详情");
    check(saved.SequenceEqual(Store.Encode(data)),"捕获和绘制导出不修改任务或已保存数据");
    var crowded=Enumerable.Range(0,25).Select(i=>new TaskItem{Id=Model.Id(),Name="任务 "+(i+1)+"：验证完整任务说明与日期分页",PersonId=data.People[i%data.People.Count].Id,Status="执行中",Priority="P0",Start=Model.Date(start),End=Model.Date(start.AddDays(35))}).ToList();
    var dense=Exporter.Chart(GanttView.Order(data,crowded,true),start,start.AddDays(35),true);check(dense.Days==36&&dense.Tasks.Count==25&&dense.Tasks.Select(t=>t.Id).Distinct().Count()==25,"跨月 36 天、25 项任务保留为一张完整甘特图，任务不遗漏或重复");

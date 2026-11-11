@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
@@ -14,24 +14,54 @@ namespace LaoQin.ProgressManager {
  public static partial class Dialogs {
   static string lastTaskStatus="待讨论",lastTaskPersonId="";
   static void Footer(Panel p,Window w,Action save,string label="保存变更") {var row=Ui.Stack(true);row.Margin=new Thickness(0,22,0,0);row.HorizontalAlignment=HorizontalAlignment.Right;var cancel=Ui.Button("取消",()=>w.Close());cancel.Margin=new Thickness(0,0,8,0);row.Children.Add(cancel);row.Children.Add(Ui.Button(label,save,true));p.Children.Add(row);}
+  static TextBox ChangeNoteField(Panel panel,string label="备注（选填）"){
+   var field=new TextBox{Name="ChangeNoteBox",AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=72,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxLength=Model.ChangeNoteMaxLength};
+   System.Windows.Automation.AutomationProperties.SetName(field,label);
+   Ui.Label(panel,label,field);return field;
+  }
   public static bool TaskEditor(Window owner,Store store,string id){
    if(!store.Data.Projects.Any(x=>x.Id==store.Data.CurrentProjectId)){MessageBox.Show(owner,"请先创建项目，再新建任务。","老秦进度管理软件");return false;}
    var original=store.Data.Tasks.FirstOrDefault(t=>t.Id==id);var w=Ui.Dialog(owner,original==null?"新建任务":"编辑任务",500);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text(original==null?"新建任务":"编辑任务",21,null,true));p.Children.Add(Ui.Text("执行中的任务须填写负责人；计划时间可清空，暂不排期。",12,Ui.Muted));
-   var name=new TextBox{Text=original==null?"":original.Name,MaxLength=500};var priority=Ui.PriorityPicker(new ComboBox{ItemsSource=Model.Priorities,SelectedItem=original==null?"P0":original.Priority,Width=88,Margin=new Thickness(8,0,0,0),ToolTip="优先级 · P0 最高，P3 最低"});var nameRow=new Grid();nameRow.ColumnDefinitions.Add(new ColumnDefinition());nameRow.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});nameRow.Children.Add(name);Grid.SetColumn(priority,1);nameRow.Children.Add(priority);Ui.Label(p,"任务名称 / 优先级",nameRow);var titleHint=Ui.Text("用短标题概括工作；同一模块可用相同前缀（如【充值】）；完整原文和验收要求放在备注。",11,Ui.Muted);titleHint.Margin=new Thickness(0,5,0,0);p.Children.Add(titleHint);
-   bool hasNote=original!=null&&!String.IsNullOrWhiteSpace(original.Note);var note=new TextBox{Text=original==null?"":original.Note??"",AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=78,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxLength=50000};
-   var detailToggle=new CheckBox{Content="有备注（勾选后展开填写）",IsChecked=hasNote,Foreground=Ui.Muted,Margin=new Thickness(0,10,0,0)};var notePanel=Ui.Stack();notePanel.Visibility=hasNote?Visibility.Visible:Visibility.Collapsed;notePanel.Margin=new Thickness(0,0,0,2);Ui.Label(notePanel,"备注 · 完整内容与验收说明",note);detailToggle.Checked+=(s,e)=>notePanel.Visibility=Visibility.Visible;detailToggle.Unchecked+=(s,e)=>notePanel.Visibility=Visibility.Collapsed;p.Children.Add(detailToggle);p.Children.Add(notePanel);
+   var name=new TextBox{Text=original==null?"":original.Name,MaxLength=500};var priority=Ui.PriorityPicker(new ComboBox{ItemsSource=Model.Priorities,SelectedItem=original==null?"P0":original.Priority,Width=88,Margin=new Thickness(8,0,0,0),ToolTip="优先级 · P0 最高，P3 最低"});var nameRow=new Grid();nameRow.ColumnDefinitions.Add(new ColumnDefinition());nameRow.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});nameRow.Children.Add(name);Grid.SetColumn(priority,1);nameRow.Children.Add(priority);Ui.Label(p,"任务名称 / 优先级",nameRow);var titleHint=Ui.Text("用短标题概括工作；同一模块可用相同前缀（如【充值】）。",11,Ui.Muted);titleHint.Margin=new Thickness(0,5,0,0);p.Children.Add(titleHint);
    string defaultStatus=original==null?(Model.Statuses.Contains(lastTaskStatus)?lastTaskStatus:"待讨论"):original.Status;var status=new ComboBox{ItemsSource=Model.Statuses,SelectedItem=defaultStatus};Ui.Label(p,"任务状态",status);
    string defaultPerson=original==null?(store.Data.People.Any(x=>x.Id==lastTaskPersonId&&!x.Deleted)?lastTaskPersonId:""):original.PersonId;var person=new EntityPicker(store,w,false,defaultPerson,null,allowClear:true);Ui.Label(p,"负责人",person);
    var dates=new DateRangePicker(original==null?"":original.Start,original==null?"":original.End);Ui.Label(p,"计划时间",dates);
-   var hint=Ui.Text("状态变化、任务修改和排期变化都会记录操作时间。",11,Ui.Muted);hint.Margin=new Thickness(0,13,0,0);p.Children.Add(hint);
+   CheckBox noteToggle=null;TextBox changeNote;
+   if(original==null){
+    noteToggle=new CheckBox{Content="填写备注（选填）",Foreground=Ui.Muted,Margin=new Thickness(0,14,0,0)};
+    var notePanel=Ui.Stack();notePanel.Visibility=Visibility.Collapsed;
+    changeNote=ChangeNoteField(notePanel,"备注");
+    noteToggle.Checked+=(s,e)=>notePanel.Visibility=Visibility.Visible;
+    noteToggle.Unchecked+=(s,e)=>notePanel.Visibility=Visibility.Collapsed;
+    p.Children.Add(noteToggle);p.Children.Add(notePanel);
+   }else changeNote=ChangeNoteField(p);
+   var hint=Ui.Text(original==null?"备注随创建任务写入时间线。":"备注随本次变更写入时间线。",11,Ui.Muted);hint.Margin=new Thickness(0,8,0,0);p.Children.Add(hint);
    Footer(p,w,()=>{
-    string n=name.Text.Trim(),s=(string)status.SelectedItem,personId=person.SelectedId,savedNote=note.Text.Trim();var a=dates.Start;var b=dates.End;
+    string n=name.Text.Trim(),s=(string)status.SelectedItem,personId=person.SelectedId;
+    string operationNote=noteToggle==null||noteToggle.IsChecked==true?changeNote.Text:null;var a=dates.Start;var b=dates.End;
     if(n.Length==0)throw new InvalidOperationException("请输入任务名称。");if(a.HasValue!=b.HasValue||(a.HasValue&&a>b))throw new InvalidOperationException("请填写正确、完整的起止日期。");
     if(s=="执行中"&&String.IsNullOrEmpty(personId))throw new InvalidOperationException("任务设为执行中时，必须选择负责人。");
-    store.Commit(d=>{var t=d.Tasks.FirstOrDefault(x=>x.Id==id);bool created=t==null;if(created){t=new TaskItem{Id=Model.Id(),ProjectId=d.CurrentProjectId,History=new List<Change>()};d.Tasks.Add(t);}string before=t.Status,oldName=t.Name,oldRange=created?"":Model.Range(t),oldPerson=t.PersonId,oldPriority=t.Priority;bool wasIn=t.InGantt;t.Name=n;t.Status=s;t.Priority=(string)priority.SelectedItem;t.PersonId=personId??"";t.Start=a.HasValue?Model.Date(a.Value):"";t.End=b.HasValue?Model.Date(b.Value):"";t.Note=savedNote;if(s=="执行中"&&(created||before!="执行中"))t.InGantt=true;if(!a.HasValue||String.IsNullOrEmpty(t.PersonId))t.InGantt=false;
-     if(created||before!=s)Model.Record(d,t,created?"创建任务":"状态变更",before,created?"":"每次状态变更自动记录。");
-     else if(oldPriority!=t.Priority||oldName!=t.Name||oldRange!=Model.Range(t)||oldPerson!=t.PersonId||(original!=null&&original.Note!=t.Note)||wasIn!=t.InGantt)Model.Record(d,t,!a.HasValue&&oldRange!=Model.Range(t)?"清空计划时间":"任务修改",before,"原任务名称："+oldName+"；原计划："+oldRange+"。"+(oldPriority!=t.Priority?"优先级："+oldPriority+" → "+t.Priority+"。":""));
-     if(!created&&before!=s&&!a.HasValue&&oldRange!=Model.Range(t))Model.Record(d,t,"清空计划时间",s,"原计划："+oldRange+"。任务已退出当前排期。");
+    store.Commit(d=>{
+     var t=d.Tasks.FirstOrDefault(x=>x.Id==id);bool created=t==null;
+     if(created){t=new TaskItem{Id=Model.Id(),ProjectId=d.CurrentProjectId};d.Tasks.Add(t);}
+     string before=t.Status,oldName=t.Name,oldRange=Model.Range(t),oldPerson=t.PersonId,oldPriority=t.Priority;
+     bool wasIn=Model.IsCurrentGanttTask(t);
+     t.Name=n;t.Status=s;t.Priority=(string)priority.SelectedItem;t.PersonId=personId??"";t.Start=a.HasValue?Model.Date(a.Value):"";t.End=b.HasValue?Model.Date(b.Value):"";
+     if(s=="执行中"&&(created||before!="执行中"))t.InGantt=true;
+     if(!a.HasValue||String.IsNullOrEmpty(t.PersonId))t.InGantt=false;
+     if(created){Model.Record(d,t,"创建任务","","",operationNote);return;}
+     string range=Model.Range(t);bool isIn=Model.IsCurrentGanttTask(t);
+     var changes=new[]{
+      Model.ChangeLine("任务名称",oldName,t.Name),
+      Model.ChangeLine("优先级",oldPriority,t.Priority),
+      oldPerson==t.PersonId?"":Model.ChangeLine("负责人",Model.PersonName(d,oldPerson),Model.PersonName(d,t.PersonId)),
+      Model.ChangeLine("计划时间",oldRange,range),
+      Model.ChangeLine("当前排期",wasIn?"已纳入":"未纳入",isIn?"已纳入":"未纳入")
+     };
+     string detail=String.Join("\n",changes.Where(line=>line.Length>0));
+     if(before!=s)Model.Record(d,t,"状态变更",before,detail,operationNote);
+     else if(detail.Length>0)Model.Record(d,t,!a.HasValue&&oldRange!=range?"清空计划时间":"任务修改",before,detail,operationNote);
+     else if(!String.IsNullOrWhiteSpace(operationNote))Model.Record(d,t,"追加备注",s,"",operationNote);
     });lastTaskStatus=s;lastTaskPersonId=personId??"";w.DialogResult=true;
    },original==null?"创建任务":"保存变更");
    w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return w.ShowDialog()==true;
@@ -47,19 +77,18 @@ namespace LaoQin.ProgressManager {
    var card=Ui.Card(cardContent,14);card.Margin=new Thickness(0,8,0,14);Grid.SetColumn(card,1);Grid.SetRow(card,1);row.Children.Add(card);return row;
   }
   static UIElement ActivityContent(Change h){
-   if(h.Kind=="需求追加")return Ui.Text(h.Detail,12);
-   var panel=Ui.Stack();
-   if(h.Kind!="创建任务"){string state=String.IsNullOrEmpty(h.Before)?h.After:(h.Before==h.After?"状态："+h.After:h.Before+"  →  "+h.After);var status=Ui.Text(state,12,h.After=="执行中"?Ui.Brand:Ui.Muted);status.Margin=new Thickness(0,5,0,0);panel.Children.Add(status);}
-   var details=Ui.Stack();if(!String.IsNullOrEmpty(h.Priority))details.Children.Add(Ui.PriorityBadge(h.Priority));if(!String.IsNullOrEmpty(h.PersonName))details.Children.Add(Ui.Text("负责人："+h.PersonName,11,Ui.Muted));if(Model.IsDate(h.Start))details.Children.Add(Ui.Text("计划："+h.Start+" — "+h.End,11,Ui.Muted));if(!String.IsNullOrEmpty(h.Detail))details.Children.Add(Ui.Text(h.Detail,11,Ui.Muted));if(details.Children.Count>0){details.Margin=new Thickness(0,5,0,0);panel.Children.Add(details);}
+   var panel=Ui.Stack();string details=Model.TimelineDetails(h);
+   if(details.Length>0)panel.Children.Add(Ui.Text(details,12,Ui.Muted));
+   var note=Ui.Text(Model.TimelineNoteLine(h),12);note.Margin=new Thickness(0,details.Length>0?8:0,0,0);panel.Children.Add(note);
    return panel;
   }
   internal static bool AppendRequirement(Window owner,Store store,string id){
    var task=store.Data.Tasks.FirstOrDefault(x=>x.Id==id);if(task==null)return false;
    var w=Ui.Dialog(owner,"追加需求",520);var p=Ui.Stack();p.Margin=new Thickness(24);
-   p.Children.Add(Ui.Text("追加需求",21,null,true));var intro=Ui.Text("备注会保留不变。新内容将以当前时间追加到任务时间线。",12,Ui.Muted);intro.Margin=new Thickness(0,6,0,4);p.Children.Add(intro);
+   p.Children.Add(Ui.Text("追加需求",21,null,true));
    var field=new TextBox{AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=190,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxLength=50000};Ui.Label(p,"本次补充内容",field);
    var hint=Ui.Text("保存后按时间顺序显示在任务详情中；记录时间由软件自动生成。",11,Ui.Muted);hint.Margin=new Thickness(0,8,0,0);p.Children.Add(hint);
-   Footer(p,w,()=>{string content=field.Text.Trim();if(content.Length==0)throw new InvalidOperationException("请输入本次补充内容。");store.Commit(d=>{var current=d.Tasks.FirstOrDefault(x=>x.Id==id);if(current==null)throw new InvalidOperationException("任务不存在或已被删除。");Model.Record(d,current,"需求追加",current.Status,content);});w.DialogResult=true;},"追加到时间线");
+   Footer(p,w,()=>{string content=field.Text.Trim();if(content.Length==0)throw new InvalidOperationException("请输入本次补充内容。");store.Commit(d=>{var current=d.Tasks.FirstOrDefault(x=>x.Id==id);if(current==null)throw new InvalidOperationException("任务不存在或已被删除。");Model.Record(d,current,"需求追加",current.Status,"",content);});w.DialogResult=true;},"追加到时间线");
    w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.Loaded+=(s,e)=>field.Focus();return w.ShowDialog()==true;
   }
   public static bool Detail(Window owner,Store store,string id){
@@ -76,24 +105,75 @@ namespace LaoQin.ProgressManager {
    actions.Children.Add(Ui.Button("关闭",()=>w.Close()));Grid.SetColumn(actions,1);footer.Children.Add(actions);main.Children.Add(footer);
    var content=Ui.Stack();var heading=Ui.Stack();heading.Children.Add(Ui.Text("任务详情",12,Ui.Muted));var title=Ui.TaskTitle(t.Name,t.Priority,24);title.Margin=new Thickness(0,10,0,12);heading.Children.Add(title);var statusRow=Ui.Stack(true);statusRow.Children.Add(Ui.Badge(t.Status));var project=store.Data.Projects.FirstOrDefault(x=>x.Id==t.ProjectId);var projectLabel=Ui.Text(project==null?"项目已删除":project.Name,12,Ui.Muted);projectLabel.Margin=new Thickness(10,0,0,0);statusRow.Children.Add(projectLabel);heading.Children.Add(statusRow);heading.Children.Add(new TaskProgressView(t){Margin=new Thickness(0,8,0,0)});var hero=Ui.Card(heading,20);hero.Margin=new Thickness(0,0,0,16);content.Children.Add(hero);
    var tiles=new Grid();tiles.ColumnDefinitions.Add(new ColumnDefinition());tiles.ColumnDefinitions.Add(new ColumnDefinition());tiles.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});tiles.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});var personTile=InfoTile("负责人",Model.PersonName(store.Data,t.PersonId));Grid.SetColumn(personTile,0);Grid.SetRow(personTile,0);tiles.Children.Add(personTile);var dateTile=InfoTile("计划时间",Model.Range(t));Grid.SetColumn(dateTile,1);Grid.SetRow(dateTile,0);tiles.Children.Add(dateTile);var ganttTile=InfoTile("甘特图",Model.IsCurrentGanttTask(t)?"已纳入当前排期":"未纳入当前排期");Grid.SetColumn(ganttTile,0);Grid.SetRow(ganttTile,1);tiles.Children.Add(ganttTile);var projectTile=InfoTile("所属项目",project==null?"项目已删除":project.Name);Grid.SetColumn(projectTile,1);Grid.SetRow(projectTile,1);tiles.Children.Add(projectTile);content.Children.Add(tiles);
-   var history=Model.Timeline(t);var created=history.FirstOrDefault(h=>h.Kind=="创建任务");bool legacyNote=created==null&&Model.HasInitialDetails(t);var timelineHeading=Ui.Text("任务时间线 · "+Model.TimelineNodeCount(t)+" 条",16,null,true);timelineHeading.Margin=new Thickness(0,14,0,10);content.Children.Add(timelineHeading);
-   if(legacyNote)content.Children.Add(TimelineEntry("备注","创建时间未记录",Ui.Text(t.Note,12),true,history.Count==0));
-   if(history.Count==0&&!legacyNote)content.Children.Add(Ui.Card(Ui.Text("暂无时间线记录，可通过“追加需求”记录新的补充内容。",12,Ui.Muted),14));
-   for(int i=0;i<history.Count;i++){var h=history[i];var entry=Ui.Stack();if(h==created&&!String.IsNullOrWhiteSpace(t.Note)){entry.Children.Add(Ui.Text(t.Note,12));var details=new Border{Child=ActivityContent(h),Margin=new Thickness(0,10,0,0)};entry.Children.Add(details);}else entry.Children.Add(ActivityContent(h));content.Children.Add(TimelineEntry(h.Kind,Model.HistoryTime(h),entry,h.Kind=="创建任务",i==history.Count-1));}
+   var history=Model.TimelineEntries(t);var timelineHeading=Ui.Text("任务时间线 · "+history.Count+" 条",16,null,true);timelineHeading.Margin=new Thickness(0,14,0,10);content.Children.Add(timelineHeading);
+   if(history.Count==0)content.Children.Add(Ui.Card(Ui.Text("暂无时间线记录",12,Ui.Muted),14));
+   for(int i=0;i<history.Count;i++){var h=history[i];content.Children.Add(TimelineEntry(h.Kind,Model.HistoryTime(h),ActivityContent(h),h.Kind=="创建任务"||h.Kind=="旧版备注",i==history.Count-1));}
    main.Children.Add(new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});w.Content=main;w.ShowDialog();
    }while(reopen);
    return changed;
-  }  public class ScheduleResult {public DateTime? Start;public HashSet<string> Statuses;}
+  }  public class ScheduleResult {public DateTime? Start,End;public HashSet<string> Statuses;}
+
+  sealed class ScheduleField {
+   readonly string[] choices;
+   readonly string mixedLabel;
+   string current;
+   bool refreshing;
+   public ComboBox Picker {get;private set;}
+   public string Override {get;private set;}
+
+   public ScheduleField(string name,string[] choices,string mixedLabel){
+    this.choices=choices;
+    this.mixedLabel=mixedLabel;
+    Picker=new ComboBox{Name=name};
+    Picker.SelectionChanged+=(s,e)=>{
+     if(refreshing)return;
+     string selected=Picker.SelectedItem as string;
+     Override=selected!=current&&choices.Contains(selected)?selected:null;
+    };
+   }
+
+   public void Refresh(IEnumerable<string> selectedValues){
+    var values=selectedValues.Distinct().Take(2).ToArray();
+    refreshing=true;
+    try{
+     if(values.Length==0){
+      Override=null;
+      current="未选择任务";
+      Picker.ItemsSource=new[]{current};
+     }else if(values.Length==1){
+      current=values[0];
+      Picker.ItemsSource=choices;
+     }else{
+      current=mixedLabel;
+      Picker.ItemsSource=new[]{mixedLabel}.Concat(choices);
+     }
+     Picker.IsEnabled=values.Length>0;
+     Picker.SelectedItem=Override??current;
+    }finally{refreshing=false;}
+   }
+  }
+
   public static ScheduleResult Schedule(Window owner,Store store,string originalId){
    var original=store.Data.Tasks.FirstOrDefault(t=>t.Id==originalId);var w=Ui.Dialog(owner,original==null?"安排现有任务":"替换甘特条与调整排期",525);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text(original==null?"安排现有任务":"编辑甘特图排期",21,null,true));var desc=Ui.Text(original==null?"按状态筛选，再输入关键词筛选当前项目的任务。":"输入关键词筛选要放入当前甘特条的任务；原任务与历史记录保留。",12,Ui.Muted);desc.Margin=new Thickness(0,7,0,0);p.Children.Add(desc);
-   var statuses=new MultiPicker("状态",Model.Statuses.Select(s=>new Choice{Id=s,Label=s}),original==null?Model.Statuses:new[]{original.Status});Ui.Label(p,"按状态筛选 · 可多选",statuses);
+   var statuses=new MultiPicker("状态",Model.Statuses.Select(s=>new Choice{Id=s,Label=s}),original==null?Model.Statuses:new[]{original.Status});Ui.Label(p,"按状态筛选",statuses);
    Func<List<Choice>> options=()=>store.Data.Tasks.Where(t=>t.ProjectId==store.Data.CurrentProjectId&&statuses.Selected.Contains(t.Status)).Select(t=>new Choice{Id=t.Id,Label=t.Name,Priority=t.Priority,Detail=t.Status}).ToList();
-   var taskPicker=new MultiPicker("任务",options(),original==null?new string[0]:new[]{original.Id},true);Ui.Label(p,"任务名称 · 输入关键词筛选并多选",taskPicker);statuses.Changed=()=>taskPicker.SetOptions(options(),true);
-   var targetStatus=new ComboBox{ItemsSource=new[]{"保持原状态"}.Concat(Model.Statuses).ToList(),SelectedItem="保持原状态"};Ui.Label(p,"修改任务状态 · 对全部选中任务生效",targetStatus);
-   var priority=new ComboBox{ItemsSource=new[]{"保持原优先级"}.Concat(Model.Priorities).ToList(),SelectedItem="保持原优先级"};Ui.PriorityPicker(priority);Ui.Label(p,"优先级 · 对全部选中任务生效",priority);var person=new EntityPicker(store,w,false,original==null?"":original.PersonId,null);Ui.Label(p,"负责人 · 对全部选中任务生效",person);
-   var dates=new DateRangePicker(original==null?Model.Date(DateTime.Today):original.Start,original==null?Model.Date(DateTime.Today.AddDays(4)):original.End);Ui.Label(p,"计划时间 · 对全部选中任务生效",dates);
+   var taskPicker=new MultiPicker("任务",options(),original==null?new string[0]:new[]{original.Id},true);Ui.Label(p,"任务名称",taskPicker);
+   var targetStatus=new ScheduleField("ScheduleStatus",Model.Statuses,"多种状态");Ui.Label(p,"修改任务状态",targetStatus.Picker);
+   var priority=new ScheduleField("SchedulePriority",Model.Priorities,"多种优先级");Ui.Label(p,"优先级",Ui.PriorityPicker(priority.Picker));
+   // 状态筛选也可能移除已选任务，两个字段都按剩余任务重新显示。
+   Action refreshFields=()=>{
+    var selected=store.Data.Tasks.Where(t=>taskPicker.Selected.Contains(t.Id)).ToList();
+    targetStatus.Refresh(selected.Select(t=>t.Status));
+    priority.Refresh(selected.Select(t=>t.Priority));
+   };
+   taskPicker.Changed=refreshFields;
+   statuses.Changed=()=>{taskPicker.SetOptions(options(),true);refreshFields();};
+   refreshFields();
+   var person=new EntityPicker(store,w,false,original==null?"":original.PersonId,null);Ui.Label(p,"负责人",person);
+   var dates=new DateRangePicker(original==null?Model.Date(DateTime.Today):original.Start,original==null?Model.Date(DateTime.Today.AddDays(4)):original.End);Ui.Label(p,"计划时间",dates);
+   var changeNote=ChangeNoteField(p);
    var hint=Ui.Card(Ui.Text("时间可清空，保存后选中任务退出当前排期；状态按上方选择保存，原计划会记录到时间线。未再次选中的原任务及其历史保留。",12,Ui.Muted),12);hint.Background=Ui.Bg;hint.BorderThickness=new Thickness(0);hint.Margin=new Thickness(0,18,0,0);p.Children.Add(hint);ScheduleResult result=null;
-   Footer(p,w,()=>{var a=dates.Start;var b=dates.End;if(a.HasValue!=b.HasValue)throw new InvalidOperationException("请填写完整的起止日期，或清空时间。");if(a.HasValue&&String.IsNullOrEmpty(person.SelectedId))throw new InvalidOperationException("请选择负责人。");var ids=new HashSet<string>(taskPicker.Selected);store.Commit(d=>Model.ReplaceSchedule(d,originalId,ids,a,b,person.SelectedId,Model.Priorities.Contains((string)priority.SelectedItem)?(string)priority.SelectedItem:null,Model.Statuses.Contains((string)targetStatus.SelectedItem)?(string)targetStatus.SelectedItem:null));result=new ScheduleResult{Start=a,Statuses=new HashSet<string>(store.Data.Tasks.Where(t=>ids.Contains(t.Id)).Select(t=>t.Status))};w.DialogResult=true;},original==null?"加入甘特图":"保存并同步甘特图");w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();return result;
+   Footer(p,w,()=>{var a=dates.Start;var b=dates.End;if(a.HasValue!=b.HasValue)throw new InvalidOperationException("请填写完整的起止日期，或清空时间。");if(a.HasValue&&String.IsNullOrEmpty(person.SelectedId))throw new InvalidOperationException("请选择负责人。");var ids=new HashSet<string>(taskPicker.Selected);store.Commit(d=>Model.ReplaceSchedule(d,originalId,ids,a,b,person.SelectedId,priority.Override,targetStatus.Override,changeNote.Text));result=new ScheduleResult{Start=a,End=b,Statuses=new HashSet<string>(store.Data.Tasks.Where(t=>ids.Contains(t.Id)).Select(t=>t.Status))};w.DialogResult=true;},original==null?"加入甘特图":"保存并同步甘特图");w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();return result;
   }
  }
 }

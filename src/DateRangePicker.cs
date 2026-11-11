@@ -18,6 +18,7 @@ namespace LaoQin.ProgressManager {
   sealed class DayCell {public DateTime Date;public Button Button;}
   readonly Button startButton,endButton;readonly TextBlock startValue,endValue,summary;
   readonly bool filterMode;
+  readonly int maxDays;
   readonly Popup popup;readonly Button clearButton;
   FrameworkElement popupView;TextBox startInput,endInput;TextBlock instruction,error,draftSummary;Button applyButton,previous,next;Grid months;
   readonly List<DayCell> days=new List<DayCell>();
@@ -26,17 +27,21 @@ namespace LaoQin.ProgressManager {
   public DateTime? End {get;private set;}
   public event Action Changed;
 
-  public DateRangePicker(string start,string end,bool filterMode=false){
+  public DateRangePicker(string start,string end,bool filterMode=false):this(start,end,filterMode,0){}
+  internal DateRangePicker(string start,string end,int maxDays):this(start,end,false,maxDays){}
+
+  DateRangePicker(string start,string end,bool filterMode,int maxDays){
    this.filterMode=filterMode;
+   this.maxDays=maxDays;
    Start=Model.IsDate(start)?(DateTime?)Model.Parse(start):null;End=Model.IsDate(end)?(DateTime?)Model.Parse(end):null;
    clearButton=Ui.Button(filterMode?"清除":"清空时间",()=>{popup.IsOpen=false;SetRange(null,null);});
    clearButton.FontSize=11;clearButton.Foreground=Ui.Brand;clearButton.BorderThickness=new Thickness(0);
-   if(filterMode){
+   if(filterMode||maxDays>0){
     Orientation=Orientation.Horizontal;
-    startButton=Ui.Button("全部",()=>Open(true));startButton.MinHeight=36;
-    startButton.ToolTip="筛选与所选日期有重叠的任务，包含起止当天";
+    startButton=Ui.Button("",()=>Open(true));startButton.MinHeight=36;
+    startButton.ToolTip=filterMode?"筛选与所选日期有重叠的任务，包含起止当天":"选择甘特图时间范围，包含起止当天";
     clearButton.ToolTip="清除计划时间筛选";clearButton.Padding=new Thickness(7,4,7,4);
-    Children.Add(startButton);Children.Add(clearButton);
+    Children.Add(startButton);if(filterMode)Children.Add(clearButton);
    }else{
     var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(24)});fields.ColumnDefinitions.Add(new ColumnDefinition());
     startValue=Ui.Text("",14,null,true);endValue=Ui.Text("",14,null,true);
@@ -47,7 +52,7 @@ namespace LaoQin.ProgressManager {
     clearButton.Padding=new Thickness(2,0,2,0);clearButton.Margin=new Thickness(8,7,0,0);clearButton.ToolTip="清空起止日期，保存后取消当前排期";
     DockPanel.SetDock(clearButton,Dock.Right);summaryRow.Children.Add(clearButton);summaryRow.Children.Add(summary);Children.Add(summaryRow);
    }
-   popup=new Popup{PlacementTarget=this,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true,VerticalOffset=6,PopupAnimation=PopupAnimation.Fade};
+   popup=new Popup{PlacementTarget=this,Placement=maxDays>0?PlacementMode.Top:PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true,VerticalOffset=maxDays>0?-6:6,PopupAnimation=PopupAnimation.Fade};
    popup.Closed+=(s,e)=>{startButton.Background=Brushes.White;if(endButton!=null)endButton.Background=Brushes.White;};
    Unloaded+=(s,e)=>popup.IsOpen=false;UpdateField();
   }
@@ -57,15 +62,16 @@ namespace LaoQin.ProgressManager {
   }
   public void SetRange(DateTime? start,DateTime? end){
    if(start.HasValue!=end.HasValue||start.HasValue&&start.Value.Date>end.Value.Date)throw new InvalidOperationException("请填写正确、完整的起止日期。");
+   if(maxDays>0&&(!start.HasValue||(end.Value.Date-start.Value.Date).Days>=maxDays))throw new InvalidOperationException("请选择 1 到 "+maxDays+" 天的时间范围。");
    Start=start.HasValue?(DateTime?)start.Value.Date:null;End=end.HasValue?(DateTime?)end.Value.Date:null;UpdateField();if(Changed!=null)Changed();
   }
   static string DateText(DateTime? date){return date.HasValue?date.Value.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture):"";}
   string RangeSummary(DateTime? start,DateTime? end){return start.HasValue&&end.HasValue?"共 "+((end.Value-start.Value).Days+1)+" 天 · 包含结束当天":filterMode?"全部计划时间":"尚未安排 · 可重新选择计划时间";}
   void UpdateField(){
    clearButton.Visibility=Start.HasValue||End.HasValue?Visibility.Visible:Visibility.Collapsed;
-   if(filterMode){
-    string range=Start.HasValue?DateText(Start)+" — "+DateText(End):"全部";
-    startButton.Content=range+"  ▾";AutomationProperties.SetName(startButton,"计划时间筛选："+range);
+   if(filterMode||maxDays>0){
+    string range=Start.HasValue?DateText(Start)+" — "+DateText(End):"选择时间段";
+    startButton.Content=range+"  ▾";AutomationProperties.SetName(startButton,(filterMode?"计划时间筛选：":"甘特图时间范围：")+range);
     return;
    }
    startValue.Text=Start.HasValue?DateText(Start):"选择开始日期";endValue.Text=End.HasValue?DateText(End):"选择结束日期";
@@ -95,7 +101,7 @@ namespace LaoQin.ProgressManager {
    var shortcuts=Ui.Stack(true);foreach(string caption in new[]{"今天","本周","下周","未来 7 天"}){string choice=caption;var button=Ui.Button(caption,()=>Shortcut(choice));button.Padding=new Thickness(11,7,11,7);button.Margin=new Thickness(0,0,7,0);shortcuts.Children.Add(button);}content.Children.Add(shortcuts);
    error=Ui.Text("",11,Ui.B("#BE3445"));error.Margin=new Thickness(0,8,0,0);error.Visibility=Visibility.Collapsed;content.Children.Add(error);
    var footer=new DockPanel{Margin=new Thickness(0,14,0,0)};var actions=Ui.Stack(true);DockPanel.SetDock(actions,Dock.Right);footer.Children.Add(actions);
-   var clear=Ui.Button("清空时间",()=>{draftStart=null;draftEnd=null;selectingStart=true;hoverDate=null;SyncInputs();PaintDays();});clear.Padding=new Thickness(10,8,10,8);clear.Margin=new Thickness(0,0,7,0);actions.Children.Add(clear);
+   if(maxDays==0){var clear=Ui.Button("清空时间",()=>{draftStart=null;draftEnd=null;selectingStart=true;hoverDate=null;SyncInputs();PaintDays();});clear.Padding=new Thickness(10,8,10,8);clear.Margin=new Thickness(0,0,7,0);actions.Children.Add(clear);}
    var cancel=Ui.Button("取消",()=>popup.IsOpen=false);cancel.Padding=new Thickness(10,8,10,8);cancel.Margin=new Thickness(0,0,7,0);actions.Children.Add(cancel);
    applyButton=Ui.Button("应用日期",()=>ApplyDraft(),true);applyButton.Padding=new Thickness(12,8,12,8);actions.Children.Add(applyButton);draftSummary=Ui.Text("",11,Ui.Muted);draftSummary.MaxWidth=180;footer.Children.Add(draftSummary);content.Children.Add(footer);
    var frame=new Border{Child=new ScrollViewer{Content=content,MaxHeight=Math.Max(300,Math.Min(610,SystemParameters.WorkArea.Height-70)),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled},Background=Brushes.White,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12),Padding=new Thickness(16)};
@@ -115,7 +121,7 @@ namespace LaoQin.ProgressManager {
    date=null;if(String.IsNullOrWhiteSpace(text))return true;DateTime parsed;
    if(!DateTime.TryParseExact(text.Trim(),new[]{"yyyy-MM-dd","yyyy-M-d","yyyy/MM/dd","yyyy/M/d","yyyyMMdd"},CultureInfo.InvariantCulture,DateTimeStyles.None,out parsed))return false;date=parsed.Date;return true;
   }
-  bool InputsValid(){DateTime? a,b;if(!TryDate(startInput.Text,out a)||!TryDate(endInput.Text,out b))return false;return a.HasValue==b.HasValue;}
+  bool InputsValid(){DateTime? a,b;if(!TryDate(startInput.Text,out a)||!TryDate(endInput.Text,out b))return false;return a.HasValue==b.HasValue&&(maxDays==0||a.HasValue);}
   bool CommitInput(bool isStart){
    DateTime? date;var input=isStart?startInput:endInput;if(!TryDate(input.Text,out date)){error.Text="日期格式不正确，请输入 yyyy-MM-dd，或直接点击日历。";error.Visibility=Visibility.Visible;applyButton.IsEnabled=false;return false;}
    int duration=draftStart.HasValue&&draftEnd.HasValue?Math.Max(0,(draftEnd.Value-draftStart.Value).Days):0;
@@ -128,7 +134,7 @@ namespace LaoQin.ProgressManager {
    // 清空必须同时作用于两端，避免逐端提交时旧草稿覆盖空输入。
    if(String.IsNullOrWhiteSpace(startInput.Text)||String.IsNullOrWhiteSpace(endInput.Text)){
     if(String.IsNullOrWhiteSpace(startInput.Text)&&String.IsNullOrWhiteSpace(endInput.Text)){draftStart=null;draftEnd=null;SyncInputs();return true;}
-    error.Text="请填写完整的起止日期，或点击“清空时间”。";error.Visibility=Visibility.Visible;applyButton.IsEnabled=false;return false;
+    error.Text=maxDays>0?"请填写完整的起止日期。":"请填写完整的起止日期，或点击“清空时间”。";error.Visibility=Visibility.Visible;applyButton.IsEnabled=false;return false;
    }
    // 先提交当前正在编辑的一端，使自动联动不会覆盖尚未提交的输入。
    bool first=startInput.IsKeyboardFocusWithin||!endInput.IsKeyboardFocusWithin&&selectingStart;
@@ -170,6 +176,9 @@ namespace LaoQin.ProgressManager {
   }
   internal bool ApplyDraft(){
    if(!CommitInputs()||!InputsValid())return false;
+   if(maxDays>0&&(draftEnd.Value-draftStart.Value).Days>=maxDays){
+    error.Text="时间范围最多为 "+maxDays+" 天。";error.Visibility=Visibility.Visible;return false;
+   }
    SetRange(draftStart,draftEnd);popup.IsOpen=false;return true;
   }
  }

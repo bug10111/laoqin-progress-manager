@@ -29,7 +29,7 @@ namespace LaoQin.ProgressManager {
   }
   static string FilterSummary(string[] options,HashSet<string> selected){return selected.SetEquals(options)?"全部":selected.Count==0?"未选择":String.Join("、",options.Where(selected.Contains));}
   public List<TaskItem> Apply(AppData data){
-   return Model.OrderTaskList(data.Tasks.Where(t=>t.ProjectId==ProjectId&&statuses.Contains(t.Status)&&priorities.Contains(t.Priority)&&(Search.Length==0||Contains(t.Name)||Contains(t.Note))&&MatchesPlanRange(t))).ToList();
+   return Model.OrderTaskList(data.Tasks.Where(t=>t.ProjectId==ProjectId&&statuses.Contains(t.Status)&&priorities.Contains(t.Priority)&&MatchesPlanRange(t)&&(Search.Length==0||Contains(t.Name)||Contains(t.Note)||t.History.Any(h=>Contains(h.Note)||(h.Kind=="需求追加"&&Contains(h.Detail)))))).ToList();
   }
   bool MatchesPlanRange(TaskItem task){
    return !PlanStart.HasValue||Model.IsDate(task.Start)&&Model.IsDate(task.End)&&Model.Parse(task.Start)<=PlanEnd.Value&&Model.Parse(task.End)>=PlanStart.Value;
@@ -37,7 +37,26 @@ namespace LaoQin.ProgressManager {
   bool Contains(string value){return !String.IsNullOrEmpty(value)&&value.IndexOf(Search,StringComparison.CurrentCultureIgnoreCase)>=0;}
   public string Summary(AppData data){var project=data.Projects.First(x=>x.Id==ProjectId);return "项目："+project.Name+"；状态："+Status+"；优先级："+Priority+"；关键词："+(Search.Length==0?"无":Search)+(PlanStart.HasValue?"\n计划时间："+Model.Date(PlanStart.Value)+" — "+Model.Date(PlanEnd.Value):"");}
  }
- public enum TaskExportField { Number,Project,Name,Priority,Status,Person,Start,End,InGantt,Note,Requirements,Created,Updated }
+ public enum TaskExportField { Number,Project,Name,Priority,Status,Person,Start,End,InGantt,Created,Updated,Timeline }
+ internal static class TaskTimelineTypes {
+  internal const string Notes="备注记录", Other="其他记录";
+  internal static readonly string[] All={"创建任务","状态变更",Notes,"需求追加","任务修改","调整甘特图排期","拖动甘特图排期","清空计划时间","退出本次排期",Other};
+
+  internal static string Of(Change change){
+   if(change.Kind=="追加备注"||change.Kind=="旧版备注")return Notes;
+   return change.Kind!=Notes&&All.Contains(change.Kind)?change.Kind:Other;
+  }
+
+  internal static bool Matches(Change change,ISet<string> types){
+   return types.Contains(Of(change))||(types.Contains(Notes)&&!String.IsNullOrWhiteSpace(change.Note));
+  }
+
+  internal static HashSet<string> Select(IEnumerable<string> types){
+   var selected=new HashSet<string>(types??All,StringComparer.Ordinal);
+   selected.IntersectWith(All);
+   return selected;
+  }
+ }
  public sealed class TaskExportColumn {
   public readonly TaskExportField Field;public readonly string Header;public readonly double Width;
   public TaskExportColumn(TaskExportField field,string header,double width){Field=field;Header=header;Width=width;}
@@ -48,8 +67,8 @@ namespace LaoQin.ProgressManager {
    new TaskExportColumn(TaskExportField.Name,"任务名称",34),new TaskExportColumn(TaskExportField.Priority,"优先级",10),
    new TaskExportColumn(TaskExportField.Status,"状态",58),new TaskExportColumn(TaskExportField.Person,"负责人",22),
    new TaskExportColumn(TaskExportField.Start,"计划开始日期",18),new TaskExportColumn(TaskExportField.End,"计划结束日期",18),
-   new TaskExportColumn(TaskExportField.InGantt,"是否纳入当前排期",24),new TaskExportColumn(TaskExportField.Note,"备注",52),
-   new TaskExportColumn(TaskExportField.Requirements,"追加需求",60),new TaskExportColumn(TaskExportField.Created,"创建时间",24),
+   new TaskExportColumn(TaskExportField.InGantt,"是否纳入当前排期",24),new TaskExportColumn(TaskExportField.Timeline,"任务时间线",72),
+   new TaskExportColumn(TaskExportField.Created,"创建时间",24),
    new TaskExportColumn(TaskExportField.Updated,"最近更新时间",24)
   };
   static readonly XNamespace S="http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -59,9 +78,31 @@ namespace LaoQin.ProgressManager {
   internal const double ColumnUnitPixels=8;
   sealed class CellSpan {public int Column,First,Last;public object Value;public TaskExportField Field;}
 
-  public static void Export(string path,AppData data,TaskQuery query,IEnumerable<TaskExportField> selected){
+  static int AddTimelineSpans(List<CellSpan> spans,List<Change> history,int column,double width,HashSet<string> types){
+   int row=0;
+   foreach(var change in history){
+    if(!TaskTimelineTypes.Matches(change,types))continue;
+    string detail=Model.TimelineDetails(change);
+    string content=Model.TimelineHeading(change)+"\n"+(detail.Length>0?detail+"\n":"")+Model.TimelineNoteLine(change);
+    foreach(string part in SplitText(content,width)){
+     spans.Add(new CellSpan{Column=column,First=row,Last=row,Value=part,Field=TaskExportField.Timeline});row++;
+    }
+   }
+   return row;
+  }
+
+  /// <summary>将匹配的任务写入 Excel 工作簿。</summary>
+  /// <param name="path">工作簿路径。</param>
+  /// <param name="data">工作区数据。</param>
+  /// <param name="query">任务筛选条件。</param>
+  /// <param name="selected">按导出顺序排列的字段。</param>
+  /// <param name="timelineTypes">勾选的时间线类型，未指定时全部导出。</param>
+  public static void Export(string path,AppData data,TaskQuery query,IEnumerable<TaskExportField> selected,IEnumerable<string> timelineTypes=null){
    var available=Columns.ToDictionary(c=>c.Field);var columns=selected.Distinct().Where(available.ContainsKey).Select(field=>available[field]).ToList();
    if(columns.Count==0)throw new InvalidOperationException("请至少勾选一个导出字段。");
+   int timelineColumn=columns.FindIndex(c=>c.Field==TaskExportField.Timeline);
+   var selectedTypes=TaskTimelineTypes.Select(timelineTypes);
+   if(timelineColumn>=0&&selectedTypes.Count==0)throw new InvalidOperationException("请至少勾选一种时间线类型。");
    var tasks=query.Apply(data);if(tasks.Count==0)throw new InvalidOperationException("当前筛选条件下没有可导出的任务，请调整筛选条件。");
    // 少量列也为标题与导出信息保留足够宽度。
    var widths=columns.Select(c=>c.Width).ToArray();if(widths.Sum()<76)widths[0]+=76-widths.Sum();
@@ -71,35 +112,36 @@ namespace LaoQin.ProgressManager {
    for(int c=0;c<columns.Count;c++)header.Add(Cell(c,HeaderRow,columns[c].Header,3));rows.Add(header);
    int nextRow=HeaderRow+1;int statusColumn=columns.FindIndex(c=>c.Field==TaskExportField.Status);var progress=new StatusProgressDrawing();
    for(int index=0;index<tasks.Count;index++){
-    var task=tasks[index];var history=Model.Timeline(task);var spans=new List<CellSpan>();int count=1;
+    var task=tasks[index];var history=Model.Timeline(task);var spans=new List<CellSpan>();
+    int count=timelineColumn<0?1:Math.Max(1,AddTimelineSpans(spans,Model.TimelineEntries(task),timelineColumn,widths[timelineColumn],selectedTypes));
     for(int c=0;c<columns.Count;c++){
      var field=columns[c].Field;
-     if(field==TaskExportField.Requirements){
-      int step=0,offset=0;foreach(var change in history.Where(h=>h.Kind=="需求追加")){
-       step++;string text=step+". "+Model.HistoryTime(change)+"\n"+(change.Detail??"");
-       foreach(string part in SplitText(text,widths[c]))spans.Add(new CellSpan{Column=c,First=offset,Last=offset++,Value=part,Field=field});
-      }
-      count=Math.Max(count,offset);
-     }else{
-      object value=Value(data,query,task,history,field,index+1);var text=value as string;
-      var parts=text==null?new List<object>{value}:SplitText(text,widths[c]).Cast<object>().ToList();
-      for(int i=0;i<parts.Count;i++)spans.Add(new CellSpan{Column=c,First=i,Last=i,Value=parts[i],Field=field});
-      count=Math.Max(count,parts.Count);
-     }
+     if(field==TaskExportField.Timeline)continue;
+     object value=Value(data,query,task,history,field,index+1);var text=value as string;
+     var parts=text==null?new List<object>{value}:SplitText(text,widths[c]).Cast<object>().ToList();
+     for(int i=0;i<parts.Count;i++)spans.Add(new CellSpan{Column=c,First=i,Last=i,Value=parts[i],Field=field});
+     count=Math.Max(count,parts.Count);
     }
     if((long)nextRow+count-1>1048576)throw new InvalidOperationException("导出超过 Excel 行数上限，请缩小筛选范围。");
     // 每个任务独立合并，绝不跨任务合并同名、同负责人等字段。
-    foreach(var group in spans.Where(s=>s.Field!=TaskExportField.Requirements).GroupBy(s=>s.Column))group.Last().Last=count-1;
+    var basicSpans=spans.Where(s=>s.Field!=TaskExportField.Timeline);
+    foreach(var group in basicSpans.GroupBy(s=>s.Column))group.Last().Last=count-1;
     var heights=Enumerable.Repeat(24.0,count).ToArray();
     foreach(var span in spans){
      double needed=TextHeight(Display(span.Value,span.Field),widths[span.Column])+8;
      double extra=needed-heights.Skip(span.First).Take(span.Last-span.First+1).Sum();
      if(extra>0)for(int i=span.First;i<=span.Last;i++)heights[i]+=extra/(span.Last-span.First+1);
     }
-    if(statusColumn>=0){double extra=StatusProgressDrawing.MinimumHeight(task)-heights.Sum();if(extra>0)for(int i=0;i<count;i++)heights[i]+=extra/count;progress.Add(task,statusColumn,nextRow,widths[statusColumn],heights.Sum());}
+    if(statusColumn>=0){
+     double extra=StatusProgressDrawing.MinimumHeight(task)-heights.Sum();
+     if(extra>0)for(int i=0;i<count;i++)heights[i]+=extra/count;
+    }
+    // 进度图使用写入工作簿的实际行高，避免在长时间线中累积舍入偏差。
+    for(int i=0;i<count;i++)heights[i]=Math.Min(409,Math.Ceiling(heights[i]));
+    if(statusColumn>=0)progress.Add(task,statusColumn,nextRow,widths[statusColumn],heights);
     var starting=spans.ToDictionary(s=>s.Column+":"+s.First);
     for(int i=0;i<count;i++){
-     var row=new XElement(S+"row",new XAttribute("r",nextRow+i),new XAttribute("ht",Math.Min(409,Math.Ceiling(heights[i]))),new XAttribute("customHeight",1));
+     var row=new XElement(S+"row",new XAttribute("r",nextRow+i),new XAttribute("ht",heights[i]),new XAttribute("customHeight",1));
      for(int c=0;c<columns.Count;c++){
       CellSpan span;bool begins=starting.TryGetValue(c+":"+i,out span);object value=begins?span.Value:null;
       int style=BodyStyle(columns[c].Field,value,index%2==1);row.Add(Cell(c,nextRow+i,value,style));
@@ -146,7 +188,6 @@ namespace LaoQin.ProgressManager {
     case TaskExportField.Start:return Model.IsDate(task.Start)?(object)Model.Parse(task.Start):null;
     case TaskExportField.End:return Model.IsDate(task.End)?(object)Model.Parse(task.End):null;
     case TaskExportField.InGantt:return Model.IsCurrentGanttTask(task)?"是":"否";
-    case TaskExportField.Note:return task.Note??"";
     case TaskExportField.Created:var created=history.FirstOrDefault(h=>h.Kind=="创建任务");return created==null?null:(object)DateTimeOffset.Parse(created.At).LocalDateTime;
     case TaskExportField.Updated:return history.Count==0?null:(object)DateTimeOffset.Parse(history.Last().At).LocalDateTime;
     default:return null;
@@ -209,7 +250,7 @@ namespace LaoQin.ProgressManager {
    if(field==TaskExportField.Status&&((value as string)=="已暂停"||(value as string)=="已关闭"))return alternate?30:29;
    int offset=alternate?12:0;int kind=0;
    if(field==TaskExportField.Number||field==TaskExportField.InGantt)kind=1;
-   else if(field==TaskExportField.Note||field==TaskExportField.Requirements)kind=2;
+   else if(field==TaskExportField.Timeline)kind=2;
    else if(field==TaskExportField.Start||field==TaskExportField.End)kind=3;
    else if(field==TaskExportField.Created||field==TaskExportField.Updated)kind=4;
    else if(field==TaskExportField.Priority){kind=5+Math.Max(0,Array.IndexOf(Model.Priorities,value as string));}

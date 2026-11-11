@@ -14,19 +14,37 @@ using System.Windows.Threading;
 
 namespace LaoQin.ProgressManager {
  public class MainWindow:Window {
+  const int MaxChartDays=3660;
   double exportTimelineWidth;
   DateTime? listPlanStart,listPlanEnd;
-  Store store;Grid frame;Grid body;GanttViewport currentChartViewport;double chartZoom=1,chartHorizontalOffset,chartVerticalOffset;EntityPicker projectPicker;GanttView currentChart;CheckBox showDetailsCheckBox;Button ganttTabButton;double taskScrollOffset;bool gantt=true,groupPeople=true;string listSearch="";HashSet<string> listStatuses=new HashSet<string>(Model.Statuses),listPriorities=new HashSet<string>(Model.Priorities);int taskPage=1;const int TasksPerPage=20;HashSet<string> chartSelection=new HashSet<string>();HashSet<string> statusFilters=new HashSet<string>{"执行中"};DateTime viewStart=Model.Monday(DateTime.Today);int days=14;public bool ShowTaskDetails{get;private set;}
+  Action syncChartControls;
+  TextBlock saveStatusText;
+  Store store;Grid frame;Grid body;GanttViewport currentChartViewport;double chartZoom=1,chartHorizontalOffset,chartVerticalOffset;EntityPicker projectPicker;GanttView currentChart;MultiPicker timelineTypesPicker;Button ganttTabButton;double taskScrollOffset;bool gantt=true,groupPeople=true;string listSearch="";HashSet<string> listStatuses=new HashSet<string>(Model.Statuses),listPriorities=new HashSet<string>(Model.Priorities);int taskPage=1;const int TasksPerPage=20;HashSet<string> chartSelection=new HashSet<string>();HashSet<string> statusFilters=new HashSet<string>{"执行中"};DateTime viewStart=Model.Monday(DateTime.Today);int days=14;readonly HashSet<string> timelineTypes=new HashSet<string>();
   public MainWindow(Store s){store=s;Title="老秦进度管理软件";Width=Math.Min(1380,SystemParameters.WorkArea.Width-60);Height=Math.Min(920,SystemParameters.WorkArea.Height-60);MinWidth=1040;MinHeight=720;WindowStartupLocation=WindowStartupLocation.CenterScreen;WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.CanResize;WindowChrome.SetWindowChrome(this,new WindowChrome{CaptionHeight=38,ResizeBorderThickness=new Thickness(6),GlassFrameThickness=new Thickness(0),CornerRadius=new CornerRadius(10)});PreviewKeyDown+=Key;Refresh();}
   string ProjectId {get{return store.Data.CurrentProjectId;}}
   List<TaskItem> ProjectTasks(){return store.Data.Tasks.Where(t=>t.ProjectId==ProjectId).ToList();}
-  List<TaskItem> ChartTasks(){return GanttView.Order(store.Data,ProjectTasks().Where(t=>statusFilters.Contains(t.Status)&&Model.IsCurrentGanttTask(t)),groupPeople);}
+  List<TaskItem> ChartTasks(){
+   DateTime end=ChartEnd;
+   // 先确定日期内的任务行，人员分组、计数和导出共用这份结果。
+   var tasks=ProjectTasks().Where(t=>statusFilters.Contains(t.Status)&&Model.IsCurrentGanttTask(t)
+    &&Model.Parse(t.Start)<=end&&Model.Parse(t.End)>=viewStart);
+   return GanttView.Order(store.Data,tasks,groupPeople);
+  }
   void UpdateGanttTabCount(){if(ganttTabButton!=null)ganttTabButton.Content="≡  甘特图  "+ChartTasks().Count;}
   internal void TestView(bool showGantt){gantt=showGantt;Refresh();}
-  public void SetShowTaskDetails(bool show){ShowTaskDetails=show;if(showDetailsCheckBox!=null)showDetailsCheckBox.IsChecked=show;if(currentChart!=null){currentChart.ShowDetails=show;currentChart.ResizeToContent();}}
+  internal void SetShowTaskDetails(bool show){
+   SetChartTimelineTypes(show?TaskTimelineTypes.All:new string[0]);
+  }
+  internal void SetChartTimelineTypes(IEnumerable<string> selected){
+   timelineTypes.Clear();
+   timelineTypes.UnionWith(selected);
+   if(timelineTypesPicker!=null&&!timelineTypesPicker.Selected.SetEquals(timelineTypes))
+    timelineTypesPicker.SetSelected(timelineTypes);
+   if(currentChart!=null)currentChart.SetTimelineTypes(timelineTypes);
+  }
   Button Nav(string label,Action click,bool active=false){var b=Ui.Button(label,click);b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,5,0,0);b.Padding=new Thickness(13,12,13,12);b.BorderThickness=new Thickness(0);b.Background=active?Ui.BrandSoft:Ui.Side;b.Foreground=active?Ui.Brand:Ui.Muted;return b;}
   public void Refresh(){
-   if(currentChart!=null)exportTimelineWidth=currentChart.TimelineWidth;currentChart=null;currentChartViewport=null;showDetailsCheckBox=null;ganttTabButton=null;frame=new Grid();frame.RowDefinitions.Add(new RowDefinition{Height=new GridLength(38)});frame.RowDefinitions.Add(new RowDefinition());var outer=new Border{Child=frame,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Background=Ui.Bg};Content=outer;
+   if(currentChart!=null)exportTimelineWidth=currentChart.TimelineWidth;currentChart=null;currentChartViewport=null;timelineTypesPicker=null;ganttTabButton=null;syncChartControls=null;frame=new Grid();frame.RowDefinitions.Add(new RowDefinition{Height=new GridLength(38)});frame.RowDefinitions.Add(new RowDefinition());var outer=new Border{Child=frame,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Background=Ui.Bg};Content=outer;
    var title=new DockPanel{Background=Brushes.White};var controls=Ui.Stack(true);WindowChrome.SetIsHitTestVisibleInChrome(controls,true);DockPanel.SetDock(controls,Dock.Right);foreach(var op in new[]{"—","□","×"}){string local=op;var b=Ui.Button(op,()=>{if(local=="—")WindowState=WindowState.Minimized;else if(local=="□")WindowState=WindowState==WindowState.Maximized?WindowState.Normal:WindowState.Maximized;else Close();});b.Width=43;b.Padding=new Thickness(0);b.BorderThickness=new Thickness(0);b.Foreground=Ui.Muted;controls.Children.Add(b);}title.Children.Add(controls);var tit=Ui.Text("≋   老秦进度管理软件     /     本地离线工作区",12,Ui.Muted);tit.Margin=new Thickness(16,0,0,0);title.Children.Add(tit);frame.Children.Add(title);
    var shell=new Grid();Grid.SetRow(shell,1);shell.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(185)});shell.ColumnDefinitions.Add(new ColumnDefinition());frame.Children.Add(shell);
    var sidebar=new DockPanel{Background=Ui.Side,Margin=new Thickness(0)};var localPanel=Ui.Stack();DockPanel.SetDock(localPanel,Dock.Bottom);localPanel.Margin=new Thickness(21,20,16,20);localPanel.Children.Add(Ui.Text("▣  本地工作区",12));var offline=Ui.Text("● 离线可用 · 无需登录",11,Ui.Muted);offline.Margin=new Thickness(0,7,0,0);localPanel.Children.Add(offline);localPanel.Children.Add(Ui.Text("数据保存在这台电脑",11,Ui.Muted));sidebar.Children.Add(localPanel);
@@ -37,17 +55,83 @@ namespace LaoQin.ProgressManager {
    var head=new DockPanel{Margin=new Thickness(0,0,0,24)};var actions=Ui.Stack(true);DockPanel.SetDock(actions,Dock.Right);var exp=Ui.Button("↓ 导出甘特图",()=>Export());exp.IsEnabled=project!=null;exp.Margin=new Thickness(0,0,9,0);actions.Children.Add(exp);if(!gantt){var excel=Ui.Button("↓ 导出 Excel",()=>Dialogs.ExportTasks(this,store,CurrentTaskQuery()));excel.IsEnabled=project!=null;excel.Margin=new Thickness(0,0,9,0);actions.Children.Add(excel);}actions.Children.Add(Ui.Button(project==null?"＋ 新建项目":"＋ 新建任务",()=>NewTaskOrProject(),true));head.Children.Add(actions);var titles=Ui.Stack();titles.Children.Add(Ui.Text(project==null?"我的工作区":"项目排期",28,null,true));var sub=Ui.Text(project==null?"创建项目，开始安排任务与人员。":ProjectTasks().Count+" 项任务 · "+store.Data.People.Count(x=>!x.Deleted)+" 位成员，让进展清晰可见。",12,Ui.Muted);sub.Margin=new Thickness(0,6,0,0);titles.Children.Add(sub);head.Children.Add(titles);Grid.SetRow(head,1);main.Children.Add(head);
    var tabs=new DockPanel{Margin=new Thickness(0,0,0,18)};var hint=Ui.Text(gantt?"每一次排期变化，都有记录":"通过操作栏查看时间线或编辑任务",11,Ui.Muted);hint.HorizontalAlignment=HorizontalAlignment.Right;DockPanel.SetDock(hint,Dock.Right);tabs.Children.Add(hint);var tabrow=Ui.Stack(true);var taskTab=Ui.Button("☷  任务列表  "+ProjectTasks().Count,()=>{gantt=false;Refresh();});ganttTabButton=Ui.Button("≡  甘特图  "+ChartTasks().Count,()=>{gantt=true;Refresh();});foreach(var b in new[]{taskTab,ganttTabButton}){b.Background=Ui.Bg;b.BorderThickness=new Thickness(0,0,0,3);b.BorderBrush=Ui.Line;b.Margin=new Thickness(0,0,17,0);b.Padding=new Thickness(0,8,0,12);}var active=gantt?ganttTabButton:taskTab;active.Foreground=Ui.Brand;active.BorderBrush=Ui.Brand;tabrow.Children.Add(taskTab);tabrow.Children.Add(ganttTabButton);tabs.Children.Add(tabrow);Grid.SetRow(tabs,2);main.Children.Add(tabs);
    body=new Grid();Grid.SetRow(body,3);main.Children.Add(body);if(project==null)BuildNoProject();else if(gantt)BuildChart();else BuildTasks();
-   var footer=new DockPanel();Grid.SetRow(footer,4);main.Children.Add(footer);var save=Ui.Text("已自动保存  "+File.GetLastWriteTime(store.FilePath).ToString("HH:mm:ss"),11,Ui.Muted);DockPanel.SetDock(save,Dock.Right);footer.Children.Add(save);footer.Children.Add(Ui.Text("▣  Windows 桌面版  ·  本地数据",11,Ui.Muted));
+   var footer=new DockPanel();Grid.SetRow(footer,4);main.Children.Add(footer);saveStatusText=Ui.Text("",11,Ui.Muted);UpdateSaveStatus();DockPanel.SetDock(saveStatusText,Dock.Right);footer.Children.Add(saveStatusText);footer.Children.Add(Ui.Text("▣  Windows 桌面版  ·  本地数据",11,Ui.Muted));
   }
+  void UpdateSaveStatus(){saveStatusText.Text="已自动保存  "+File.GetLastWriteTime(store.FilePath).ToString("HH:mm:ss");}
   void BuildChart(){
    body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.RowDefinitions.Add(new RowDefinition());body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
-   Action redraw=null;var tools=new DockPanel{Margin=new Thickness(0,0,0,12)};var right=Ui.Stack(true);DockPanel.SetDock(right,Dock.Right);var details=new CheckBox{Content="是否显示详情",IsChecked=ShowTaskDetails,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};details.Click+=(s,e)=>SetShowTaskDetails(details.IsChecked==true);showDetailsCheckBox=details;right.Children.Add(details);var statusLabel=Ui.Text("甘特图状态",12,Ui.Muted);statusLabel.VerticalAlignment=VerticalAlignment.Center;statusLabel.Margin=new Thickness(0,0,6,0);right.Children.Add(statusLabel);var status=new MultiPicker("甘特图状态",Model.Statuses.Select(s=>new Choice{Id=s,Label=s}),statusFilters,filterMode:true){Name="GanttStatusFilter",Width=160,ToolTip="勾选一个或多个状态；全选表示全部状态"};status.Changed=()=>{statusFilters=new HashSet<string>(status.Selected);if(redraw!=null){redraw();UpdateGanttTabCount();}};right.Children.Add(status);var arrange=Ui.Button("＋ 安排现有任务",()=>Schedule(null));arrange.Margin=new Thickness(8,0,0,0);right.Children.Add(arrange);tools.Children.Add(right);
-   var dates=Ui.Stack(true);var caption=Ui.Stack();caption.MinWidth=156;caption.Children.Add(Ui.Text(viewStart.ToString("yyyy 年 M 月"),15,null,true));caption.Children.Add(Ui.Text(viewStart.ToString("MM.dd")+" — "+viewStart.AddDays(days-1).ToString("MM.dd"),11,Ui.Muted));dates.Children.Add(caption);var prev=Ui.Button("‹",()=>{viewStart=viewStart.AddDays(-7);RebuildBody();});prev.Padding=new Thickness(11,5,11,5);dates.Children.Add(prev);var today=Ui.Button("今天",()=>{viewStart=Model.Monday(DateTime.Today);RebuildBody();});today.Margin=new Thickness(5,0,5,0);today.Padding=new Thickness(9,5,9,5);dates.Children.Add(today);var next=Ui.Button("›",()=>{viewStart=viewStart.AddDays(7);RebuildBody();});next.Padding=new Thickness(11,5,11,5);dates.Children.Add(next);tools.Children.Add(dates);body.Children.Add(tools);
-   var chart=new GanttView(store.Data,ChartTasks(),viewStart,days,groupPeople,ShowTaskDetails);currentChart=chart;redraw=()=>{chart.Tasks=ChartTasks();chart.SetSelectedTasks(chartSelection);chart.ResizeToContent();};chart.TaskClicked=id=>Schedule(id);chart.SelectionChanged+=()=>{if(currentChart==chart)chartSelection=new HashSet<string>(chart.SelectedTaskIds);};chart.ScheduleDragged=changes=>{store.Commit(d=>Model.ApplyGanttDrags(d,changes));var first=changes.Min(c=>c.Start);if(changes.Max(c=>c.End)<viewStart||first>viewStart.AddDays(days-1)){viewStart=Model.Monday(first);chartHorizontalOffset=0;}Refresh();};var viewport=new GanttViewport(chart,chartZoom,chartHorizontalOffset,chartVerticalOffset);currentChartViewport=viewport;chart.SetSelectedTasks(chartSelection);viewport.Changed+=()=>{if(currentChartViewport!=viewport)return;chartZoom=viewport.Zoom;chartHorizontalOffset=viewport.Scroll.HorizontalOffset;chartVerticalOffset=viewport.Scroll.VerticalOffset;};var border=Ui.Card(viewport,0);Grid.SetRow(border,1);body.Children.Add(border);
-   var bottom=new DockPanel{Margin=new Thickness(0,11,0,4)};var settings=Ui.Stack(true);DockPanel.SetDock(settings,Dock.Right);var group=new ComboBox{ItemsSource=new[]{"按人员分组","按任务展示"},SelectedIndex=groupPeople?0:1,MinWidth=122,MinHeight=31};group.SelectionChanged+=(s,e)=>{groupPeople=group.SelectedIndex==0;RebuildBody();};settings.Children.Add(group);int monthDays=DateTime.DaysInMonth(DateTime.Today.Year,DateTime.Today.Month);var dayOptions=new List<string>{"7 天","15 天","本月（"+monthDays+" 天）"};var dayValues=new Dictionary<string,int>{{"7 天",7},{"15 天",15},{"本月（"+monthDays+" 天）",monthDays}};string selectedDays=dayValues.FirstOrDefault(x=>x.Value==days).Key;if(String.IsNullOrEmpty(selectedDays)){selectedDays="当前（"+days+" 天）";dayOptions.Add(selectedDays);dayValues[selectedDays]=days;}var daySelect=new ComboBox{ItemsSource=dayOptions,SelectedItem=selectedDays,Width=132,Margin=new Thickness(8,0,0,0),MinHeight=31};daySelect.SelectionChanged+=(s,e)=>{int selected;if(daySelect.SelectedItem!=null&&dayValues.TryGetValue(daySelect.SelectedItem.ToString(),out selected)&&selected!=days){days=selected;RebuildBody();}};settings.Children.Add(daySelect);var rangeInput=new TextBox{Name="GanttRangeDays",Text=days.ToString(),Width=58,MaxLength=4,MinHeight=31,VerticalContentAlignment=VerticalAlignment.Center,TextAlignment=TextAlignment.Center,ToolTip="输入 1 到 3660 天，点击应用或按 Enter"};rangeInput.Margin=new Thickness(8,0,0,0);var inputCaption=Ui.Text("天数",11,Ui.Muted);inputCaption.Margin=new Thickness(8,0,4,0);settings.Children.Add(inputCaption);settings.Children.Add(rangeInput);Action applyRange=()=>{int value;if(!Int32.TryParse(rangeInput.Text.Trim(),out value)||value<1||value>3660){MessageBox.Show(this,"请输入 1 到 3660 之间的整数。","天数无效",MessageBoxButton.OK,MessageBoxImage.Information);rangeInput.Focus();rangeInput.SelectAll();return;}days=value;RebuildBody();};rangeInput.KeyDown+=(s,e)=>{if(e.Key==System.Windows.Input.Key.Enter){applyRange();e.Handled=true;}};var apply=Ui.Button("应用",applyRange);apply.Padding=new Thickness(8,5,8,5);apply.Margin=new Thickness(5,0,0,0);settings.Children.Add(apply);bottom.Children.Add(settings);bottom.Children.Add(Ui.Text("同人短任务在前 · Shift + 单击多选后拖中间",11,Ui.Muted));Grid.SetRow(bottom,2);body.Children.Add(bottom);
+   Action redraw=null;var tools=new DockPanel{Margin=new Thickness(0,0,0,12)};var right=Ui.Stack(true);DockPanel.SetDock(right,Dock.Right);
+   var detailsLabel=Ui.Text("时间线详情",12,Ui.Muted);
+   detailsLabel.VerticalAlignment=VerticalAlignment.Center;
+   detailsLabel.Margin=new Thickness(0,0,8,0);
+   right.Children.Add(detailsLabel);
+   var types=TaskTimelineTypes.All.Select(type=>new Choice{Id=type,Label=type});
+   var details=new MultiPicker("时间线详情",types,timelineTypes,filterMode:true,summaryNameLimit:7){
+    Name="GanttTimelineTypes",Width=120,Margin=new Thickness(0,0,8,0),
+    ToolTip="勾选要显示的时间线类型，清空后隐藏详情"
+   };
+   details.Changed=()=>SetChartTimelineTypes(details.Selected);
+   timelineTypesPicker=details;
+   right.Children.Add(details);
+   var statusLabel=Ui.Text("甘特图状态",12,Ui.Muted);statusLabel.VerticalAlignment=VerticalAlignment.Center;statusLabel.Margin=new Thickness(0,0,6,0);right.Children.Add(statusLabel);var status=new MultiPicker("甘特图状态",Model.Statuses.Select(s=>new Choice{Id=s,Label=s}),statusFilters,filterMode:true){Name="GanttStatusFilter",Width=160,ToolTip="勾选一个或多个状态；全选表示全部状态"};status.Changed=()=>{statusFilters=new HashSet<string>(status.Selected);if(redraw!=null){redraw();UpdateGanttTabCount();}};right.Children.Add(status);var arrange=Ui.Button("＋ 安排现有任务",()=>Schedule(null));arrange.Margin=new Thickness(8,0,0,0);right.Children.Add(arrange);tools.Children.Add(right);
+   var dates=Ui.Stack(true);var caption=Ui.Stack();caption.MinWidth=156;
+   var monthCaption=Ui.Text("",15,null,true);var rangeCaption=Ui.Text("",11,Ui.Muted);
+   var dateRange=new DateRangePicker(Model.Date(viewStart),Model.Date(ChartEnd),MaxChartDays){Name="GanttDateRange",Margin=new Thickness(0,0,8,0)};
+   dateRange.Changed+=()=>SetChartRange(dateRange.Start.Value,(dateRange.End.Value-dateRange.Start.Value).Days+1);
+   caption.Children.Add(monthCaption);caption.Children.Add(rangeCaption);dates.Children.Add(caption);
+   syncChartControls=()=>{
+    monthCaption.Text=viewStart.ToString("yyyy 年 M 月");
+    rangeCaption.Text=viewStart.ToString("MM.dd")+" — "+ChartEnd.ToString("MM.dd");
+    if(dateRange.Start!=viewStart||dateRange.End!=ChartEnd)dateRange.SetRange(viewStart,ChartEnd);
+    status.SetSelected(statusFilters);
+   };
+   syncChartControls();
+   var prev=Ui.Button("‹",()=>SetChartRange(viewStart.AddDays(-Math.Min(7,(viewStart-DateTime.MinValue.Date).Days)),days));prev.Padding=new Thickness(11,5,11,5);dates.Children.Add(prev);var today=Ui.Button("今天",()=>SetChartRange(Model.Monday(DateTime.Today),days));today.Margin=new Thickness(5,0,5,0);today.Padding=new Thickness(9,5,9,5);dates.Children.Add(today);var next=Ui.Button("›",()=>SetChartRange(viewStart.AddDays(Math.Min(7,(DateTime.MaxValue.Date-viewStart).Days)),days));next.Padding=new Thickness(11,5,11,5);dates.Children.Add(next);tools.Children.Add(dates);body.Children.Add(tools);
+   var chart=new GanttView(store.Data,ChartTasks(),viewStart,days,groupPeople,timelineTypes.Count>0,timelineTypes);currentChart=chart;redraw=()=>{chart.Tasks=ChartTasks();chart.SetSelectedTasks(chartSelection);chart.ResizeToContent();};chart.TaskClicked=id=>Schedule(id);chart.SelectionChanged+=()=>{if(currentChart==chart)chartSelection=new HashSet<string>(chart.SelectedTaskIds);};chart.ScheduleDragged=changes=>{store.Commit(d=>Model.ApplyGanttDrags(d,changes));var first=changes.Min(c=>c.Start);if(changes.Max(c=>c.End)<viewStart||first>ChartEnd){viewStart=LimitChartStart(Model.Monday(first),days);chartHorizontalOffset=0;}Refresh();};var viewport=new GanttViewport(chart,chartZoom,chartHorizontalOffset,chartVerticalOffset);currentChartViewport=viewport;chart.SetSelectedTasks(chartSelection);viewport.Changed+=()=>{if(currentChartViewport!=viewport)return;chartZoom=viewport.Zoom;chartHorizontalOffset=viewport.Scroll.HorizontalOffset;chartVerticalOffset=viewport.Scroll.VerticalOffset;};var border=Ui.Card(viewport,0);Grid.SetRow(border,1);body.Children.Add(border);
+   var bottom=new DockPanel{Margin=new Thickness(0,11,0,4)};
+   var settings=Ui.Stack(true);DockPanel.SetDock(settings,Dock.Right);
+   settings.Children.Add(dateRange);
+   var group=new ComboBox{ItemsSource=new[]{"按人员分组","按任务展示"},SelectedIndex=groupPeople?0:1,MinWidth=122,MinHeight=31};
+   group.SelectionChanged+=(s,e)=>{groupPeople=group.SelectedIndex==0;RebuildBody();};settings.Children.Add(group);
+   int monthDays=DateTime.DaysInMonth(DateTime.Today.Year,DateTime.Today.Month);
+   var dayOptions=new List<string>{"7 天","15 天","本月（"+monthDays+" 天）"};
+   var dayValues=new Dictionary<string,int>{{"7 天",7},{"15 天",15},{"本月（"+monthDays+" 天）",monthDays}};
+   string selectedDays=dayValues.FirstOrDefault(x=>x.Value==days).Key;
+   if(String.IsNullOrEmpty(selectedDays)){selectedDays="当前（"+days+" 天）";dayOptions.Add(selectedDays);dayValues[selectedDays]=days;}
+   var daySelect=new ComboBox{ItemsSource=dayOptions,SelectedItem=selectedDays,Width=132,Margin=new Thickness(8,0,0,0),MinHeight=31};
+   daySelect.SelectionChanged+=(s,e)=>{int selected;if(daySelect.SelectedItem!=null&&dayValues.TryGetValue(daySelect.SelectedItem.ToString(),out selected))SetChartRange(viewStart,selected);};
+   settings.Children.Add(daySelect);
+   var rangeInput=new TextBox{Name="GanttRangeDays",Text=days.ToString(),Width=58,MaxLength=4,MinHeight=31,VerticalContentAlignment=VerticalAlignment.Center,TextAlignment=TextAlignment.Center,ToolTip="输入 1 到 "+MaxChartDays+" 天，点击应用或按 Enter"};
+   rangeInput.Margin=new Thickness(8,0,0,0);
+   var inputCaption=Ui.Text("天数",11,Ui.Muted);inputCaption.Margin=new Thickness(8,0,4,0);settings.Children.Add(inputCaption);settings.Children.Add(rangeInput);
+   Action applyRange=()=>{
+    int value;
+    if(!Int32.TryParse(rangeInput.Text.Trim(),out value)||value<1||value>MaxChartDays){
+     MessageBox.Show(this,"请输入 1 到 "+MaxChartDays+" 之间的整数。","天数无效",MessageBoxButton.OK,MessageBoxImage.Information);
+     rangeInput.Focus();rangeInput.SelectAll();return;
+    }
+    SetChartRange(viewStart,value);
+   };
+   rangeInput.KeyDown+=(s,e)=>{if(e.Key==System.Windows.Input.Key.Enter){applyRange();e.Handled=true;}};
+   var apply=Ui.Button("应用",applyRange);apply.Padding=new Thickness(8,5,8,5);apply.Margin=new Thickness(5,0,0,0);settings.Children.Add(apply);
+   bottom.Children.Add(settings);bottom.Children.Add(Ui.Text("同人短任务在前 · Shift + 单击多选后拖中间",11,Ui.Muted));Grid.SetRow(bottom,2);body.Children.Add(bottom);
+  }
+  DateTime ChartEnd {get{return viewStart.AddDays(days-1);}}
+  static DateTime LimitChartStart(DateTime start,int length){
+   DateTime latest=DateTime.MaxValue.Date.AddDays(1-length);
+   return start>latest?latest:start;
+  }
+  void SetChartRange(DateTime start,int length){
+   start=LimitChartStart(start,length);
+   if(viewStart==start&&days==length)return;
+   if(viewStart!=start)chartHorizontalOffset=0;
+   viewStart=start;
+   days=length;
+   RebuildBody();
+   UpdateGanttTabCount();
   }
   void BuildNoProject(){var p=Ui.Stack();p.VerticalAlignment=VerticalAlignment.Center;p.HorizontalAlignment=HorizontalAlignment.Center;p.MaxWidth=420;p.Margin=new Thickness(24);var icon=Ui.Text("▱",46,Ui.Brand);icon.HorizontalAlignment=HorizontalAlignment.Center;p.Children.Add(icon);var title=Ui.Text("还没有项目",23,null,true);title.HorizontalAlignment=HorizontalAlignment.Center;title.Margin=new Thickness(0,13,0,10);p.Children.Add(title);var note=Ui.Text("新建一个项目开始工作，或从左侧导入已有的全部数据。",13,Ui.Muted);note.TextAlignment=TextAlignment.Center;p.Children.Add(note);var add=Ui.Button("＋ 新建第一个项目",()=>projectPicker.AddNew(),true);add.HorizontalAlignment=HorizontalAlignment.Center;add.Margin=new Thickness(0,23,0,0);p.Children.Add(add);body.Children.Add(Ui.Card(p,0));}
-  void RebuildBody(){currentChart=null;currentChartViewport=null;body.Children.Clear();body.RowDefinitions.Clear();if(store.Data.Projects.Count==0)BuildNoProject();else if(gantt)BuildChart();else BuildTasks();}
+  void RebuildBody(){currentChart=null;currentChartViewport=null;syncChartControls=null;body.Children.Clear();body.RowDefinitions.Clear();if(store.Data.Projects.Count==0)BuildNoProject();else if(gantt)BuildChart();else BuildTasks();}
   Grid TaskRowGrid(){var g=new Grid();foreach(double w in new[]{39.0,13.0,20.0,13.0,15.0})g.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(w,GridUnitType.Star)});return g;}
   TaskQuery CurrentTaskQuery(){return new TaskQuery(ProjectId,listStatuses,listPriorities,listSearch,listPlanStart,listPlanEnd);}
   void BuildTasks(){
@@ -69,7 +153,7 @@ namespace LaoQin.ProgressManager {
    addFilter("优先级筛选",priorityFilter);
    var planFilter=new DateRangePicker(listPlanStart.HasValue?Model.Date(listPlanStart.Value):"",listPlanEnd.HasValue?Model.Date(listPlanEnd.Value):"",filterMode:true){Name="TaskPlanFilter"};
    planFilter.Changed+=()=>{listPlanStart=planFilter.Start;listPlanEnd=planFilter.End;filtersChanged();};
-   addFilter("计划时间",planFilter);filters.Children.Add(filterOptions);
+   addFilter("计划时间段",planFilter);filters.Children.Add(filterOptions);
    var searchFrame=new Grid{Width=280,Height=36,VerticalAlignment=VerticalAlignment.Top};var searchBox=new TextBox{Name="TaskSearchBox",Text=listSearch,MinHeight=36,VerticalContentAlignment=VerticalAlignment.Center,Padding=new Thickness(34,7,10,7),ToolTip="按任务名称或说明模糊搜索"};var searchIcon=Ui.Text("⌕",18,Ui.Muted);searchIcon.Margin=new Thickness(11,0,0,1);searchIcon.IsHitTestVisible=false;searchBox.TextChanged+=(s,e)=>{listSearch=searchBox.Text.Trim();filtersChanged();};searchFrame.Children.Add(searchBox);searchFrame.Children.Add(searchIcon);Grid.SetColumn(searchFrame,1);filters.Children.Add(searchFrame);body.Children.Add(filters);
    var dock=new DockPanel();var header=TaskRowGrid();header.Height=44;header.Background=Ui.Bg;int col=0;foreach(var label in new[]{"任务名称","负责人","计划时间","状态","操作"}){var t=Ui.Text(label,12,Ui.Muted);t.Margin=new Thickness(15,0,7,0);Grid.SetColumn(t,col++);header.Children.Add(t);}DockPanel.SetDock(header,Dock.Top);dock.Children.Add(header);
    var rows=Ui.Stack();var pager=Ui.Stack(true);renderResults=()=>{rows.Children.Clear();pager.Children.Clear();var query=listSearch.Trim();var items=CurrentTaskQuery().Apply(store.Data);int pageCount=Math.Max(1,(items.Count+TasksPerPage-1)/TasksPerPage);if(taskPage>pageCount)taskPage=pageCount;if(taskPage<1)taskPage=1;var pageItems=items.Skip((taskPage-1)*TasksPerPage).Take(TasksPerPage).ToList();foreach(var t in pageItems){var task=t;var row=TaskRowGrid();row.MinHeight=70;var namePanel=Ui.Stack();namePanel.VerticalAlignment=VerticalAlignment.Center;namePanel.Margin=new Thickness(15,9,10,9);namePanel.Children.Add(Ui.TaskTitle(t.Name,t.Priority));var info=Ui.TaskInfoTags(t);var scheduleInfo=Ui.Text(Model.IsCurrentGanttTask(t)?"已纳入排期":"未纳入当前排期",11,Ui.Muted);scheduleInfo.Margin=new Thickness(2,0,0,2);info.Children.Add(scheduleInfo);namePanel.Children.Add(info);row.Children.Add(namePanel);var person=Ui.Ellipsis(Model.PersonName(store.Data,t.PersonId),12);person.Margin=new Thickness(15,0,8,0);Grid.SetColumn(person,1);row.Children.Add(person);var range=Ui.Ellipsis(Model.IsDate(t.Start)?Model.Parse(t.Start).ToString("MM.dd")+" — "+Model.Parse(t.End).ToString("MM.dd"):"尚未安排",12,Ui.Muted);range.ToolTip=Model.Range(t);range.Margin=new Thickness(15,0,8,0);Grid.SetColumn(range,2);row.Children.Add(range);var badge=Ui.Badge(t.Status);badge.Margin=new Thickness(15,0,7,0);Grid.SetColumn(badge,3);row.Children.Add(badge);var actions=Ui.Stack(true);actions.VerticalAlignment=VerticalAlignment.Center;actions.Margin=new Thickness(10,0,4,0);var view=Ui.Button("查看",()=>{if(Dialogs.Detail(this,store,task.Id))Refresh();});view.Padding=new Thickness(5,5,5,5);view.BorderThickness=new Thickness(0);view.Background=Brushes.Transparent;view.Foreground=Ui.Brand;view.Margin=new Thickness(0,0,5,0);actions.Children.Add(view);var edit=Ui.Button("编辑",()=>{if(Dialogs.TaskEditor(this,store,task.Id))Refresh();});edit.Padding=new Thickness(5,5,5,5);edit.BorderThickness=new Thickness(0);edit.Background=Brushes.Transparent;edit.Foreground=Ui.Muted;actions.Children.Add(edit);Grid.SetColumn(actions,4);row.Children.Add(actions);rows.Children.Add(new Border{Child=row,BorderBrush=Ui.Line,BorderThickness=new Thickness(0,0,0,1)});}
@@ -78,8 +162,26 @@ namespace LaoQin.ProgressManager {
    };DockPanel.SetDock(pager,Dock.Bottom);dock.Children.Add(pager);double restoreOffset=taskScrollOffset;var taskScroll=new ScrollViewer{Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};taskScroll.ScrollChanged+=(s,e)=>taskScrollOffset=e.VerticalOffset;dock.Children.Add(taskScroll);taskScroll.Dispatcher.BeginInvoke(new Action(()=>taskScroll.ScrollToVerticalOffset(restoreOffset)),DispatcherPriority.Loaded);renderResults();var card=Ui.Card(dock,0);Grid.SetRow(card,1);body.Children.Add(card);
   }
   void NewTaskOrProject(){if(store.Data.Projects.Count==0){projectPicker.AddNew();return;}if(Dialogs.TaskEditor(this,store,null)){taskPage=1;taskScrollOffset=0;}Refresh();}
-  void Schedule(string id){if(ProjectTasks().Count==0){MessageBox.Show(this,"当前项目还没有任务，请先新建任务。","老秦进度管理软件");return;}var r=Dialogs.Schedule(this,store,id);if(r!=null){foreach(var s in r.Statuses)statusFilters.Add(s);if(r.Start.HasValue)viewStart=Model.Monday(r.Start.Value);}Refresh();}
-  internal ChartPage CaptureGanttExport(){return currentChart!=null?Exporter.CurrentView(currentChart):Exporter.Chart(ChartTasks(),viewStart,viewStart.AddDays(days-1),ShowTaskDetails,groupPeople,exportTimelineWidth);}
+  void Schedule(string id){
+   if(ProjectTasks().Count==0){MessageBox.Show(this,"当前项目还没有任务，请先新建任务。","老秦进度管理软件");return;}
+   var viewport=currentChartViewport;
+   var offset=new Point(viewport.Scroll.HorizontalOffset,viewport.Scroll.VerticalOffset);
+   var result=Dialogs.Schedule(this,store,id);
+   if(result==null)return;
+
+   statusFilters.UnionWith(result.Statuses);
+   // 仍与当前日期相交的排期沿用原来的时间轴，跨出范围时才定位到新日期。
+   bool navigate=result.Start.HasValue&&(id==null||result.End.Value<viewStart||result.Start.Value>ChartEnd);
+   if(navigate){
+    DateTime newStart=LimitChartStart(Model.Monday(result.Start.Value),days);
+    if(newStart!=viewStart){viewStart=newStart;offset.X=0;}
+   }
+   syncChartControls();
+   viewport.ApplySchedule(store.Data,ChartTasks(),viewStart,offset,id);
+   UpdateGanttTabCount();
+   UpdateSaveStatus();
+  }
+  internal ChartPage CaptureGanttExport(){return currentChart!=null?Exporter.CurrentView(currentChart):Exporter.Chart(ChartTasks(),viewStart,ChartEnd,timelineTypes.Count>0,groupPeople,exportTimelineWidth,timelineTypes);}
   void Export(){
    if(store.Data.Projects.Count==0){MessageBox.Show(this,"暂无项目，请先新建项目。全部数据仍可从左侧导出。","老秦进度管理软件");return;}
    var listQuery=!gantt&&listPlanStart.HasValue?CurrentTaskQuery():null;

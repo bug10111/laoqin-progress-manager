@@ -17,8 +17,9 @@ namespace LaoQin.ProgressManager {
   internal string PinnedPersonId{get;private set;}
   public GanttFrozenPeople(GanttView chart,ScrollViewer scroll){this.chart=chart;this.scroll=scroll;Name="GanttFrozenPeople";Width=166;HorizontalAlignment=HorizontalAlignment.Left;VerticalAlignment=VerticalAlignment.Top;ClipToBounds=true;SnapsToDevicePixels=true;MouseLeftButtonDown+=(s,e)=>e.Handled=true;MouseLeftButtonUp+=(s,e)=>e.Handled=true;}
   protected override void OnRender(DrawingContext context){base.OnRender(context);context.DrawRectangle(Brushes.White,null,new Rect(0,0,ActualWidth,ActualHeight));PinnedPersonId=null;var tasks=chart.Ordered();var pen=new Pen(Ui.Line,1);
-   for(int i=0;i<tasks.Count;){int end=i+1;if(chart.GroupPeople)while(end<tasks.Count&&tasks[end].PersonId==tasks[i].PersonId)end++;double top=i*62-scroll.VerticalOffset,bottom=end*62-scroll.VerticalOffset;
-    if(bottom>0&&top<ActualHeight){double y=top<0?Math.Min(0,bottom-62):top;if(top<=0)PinnedPersonId=tasks[i].PersonId;if(top>0)context.DrawLine(pen,new Point(0,top),new Point(166,top));GanttView.DrawPerson(context,chart.Data,tasks,tasks[i],y,chart.GroupPeople);}i=end;
+   const double rowHeight=GanttView.TaskRowHeight;
+   for(int i=0;i<tasks.Count;){int end=i+1;if(chart.GroupPeople)while(end<tasks.Count&&tasks[end].PersonId==tasks[i].PersonId)end++;double top=i*rowHeight-scroll.VerticalOffset,bottom=end*rowHeight-scroll.VerticalOffset;
+    if(bottom>0&&top<ActualHeight){double y=top<0?Math.Min(0,bottom-rowHeight):top;if(top<=0)PinnedPersonId=tasks[i].PersonId;if(top>0)context.DrawLine(pen,new Point(0,top),new Point(166,top));GanttView.DrawPerson(context,chart.Data,tasks,tasks[i],y,chart.GroupPeople);}i=end;
    }context.DrawLine(pen,new Point(166,0),new Point(166,ActualHeight));
   }
  }

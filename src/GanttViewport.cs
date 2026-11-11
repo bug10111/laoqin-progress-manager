@@ -2,6 +2,7 @@
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -38,9 +39,59 @@ namespace LaoQin.ProgressManager {
   static double Clamp(double value,double min,double max){return Math.Max(min,Math.Min(max,value));}
   double ViewWidth {get{return Scroll.ViewportWidth>0?Scroll.ViewportWidth:Math.Max(600,ActualWidth-SystemParameters.VerticalScrollBarWidth);}}
   void UpdateWidth(){if(Chart.IsPointerActive)return;double dayWidth=Math.Max(DefaultDayWidth,(ViewWidth-LabelWidth)/Math.Max(1,Chart.Days)),width=LabelWidth+Math.Max(1,Chart.Days)*dayWidth*Zoom;if(Math.Abs(Chart.TimelineWidth-width)>.1)Chart.SetTimelineWidth(width);UpdateHeader();}
-  void UpdateHeader(){if(Header==null)return;var presenter=Scroll.Template==null?null:Scroll.Template.FindName("PART_ScrollContentPresenter",Scroll) as ScrollContentPresenter;var origin=presenter==null?new Point():presenter.TranslatePoint(new Point(),Scroll);Header.Margin=new Thickness(origin.X,origin.Y,0,0);Header.Width=Math.Max(0,Scroll.ViewportWidth);People.Margin=new Thickness(origin.X,origin.Y+64,0,0);People.Width=Math.Min(166,Math.Max(0,Scroll.ViewportWidth));People.Height=Math.Max(0,Scroll.ViewportHeight-64);Chart.DragFeedbackMinX=Scroll.HorizontalOffset+166;Chart.DragFeedbackMinY=Scroll.VerticalOffset+Header.Height;Header.InvalidateVisual();People.InvalidateVisual();}
+  void UpdateHeader(){
+   if(Header==null)return;
+   var presenter=Scroll.Template==null?null:Scroll.Template.FindName("PART_ScrollContentPresenter",Scroll) as ScrollContentPresenter;
+   var origin=presenter==null?new Point():presenter.TranslatePoint(new Point(),Scroll);
+   Header.Margin=new Thickness(origin.X,origin.Y,0,0);
+   Header.Width=Math.Max(0,Scroll.ViewportWidth);
+   People.Margin=new Thickness(origin.X,origin.Y+Header.Height,0,0);
+   People.Width=Math.Min(LabelWidth,Header.Width);
+
+   // 人员列只覆盖任务行，不能挡住任务下方的颜色图例。
+   double rowsBottom=Chart.Tasks.Count*GanttView.TaskRowHeight-Scroll.VerticalOffset;
+   People.Height=Math.Max(0,Math.Min(rowsBottom,Scroll.ViewportHeight-Header.Height));
+   Chart.DragFeedbackMinX=Scroll.HorizontalOffset+LabelWidth;
+   Chart.DragFeedbackMinY=Scroll.VerticalOffset+Header.Height;
+   Header.InvalidateVisual();
+   People.InvalidateVisual();
+  }
   void UpdateIndicator(){zoomText.Text=Math.Round(Zoom*100)+"%";zoomOut.IsEnabled=Zoom>MinZoom+.0001;zoomIn.IsEnabled=Zoom<MaxZoom-.0001;}
   void Notify(){if(Changed!=null)Changed();}
+
+  // 优先保持正在编辑的行；它退出排期时，保持仍可见的相邻行。
+  double PreservedVerticalOffset(List<TaskItem> before,List<TaskItem> after,double offset,string editedTaskId){
+   const double rowHeight=GanttView.TaskRowHeight;
+   int first=Math.Min(before.Count,(int)Math.Floor(offset/rowHeight));
+   int end=Math.Min(before.Count,(int)Math.Ceiling((offset+Math.Max(0,Scroll.ViewportHeight-Header.Height))/rowHeight));
+   if(first>=end)return offset;
+
+   var positions=new Dictionary<string,int>();
+   for(int i=0;i<after.Count;i++)positions[after[i].Id]=i;
+   int preferred=before.FindIndex(first,end-first,t=>t.Id==editedTaskId);
+   int newIndex;
+   if(preferred>=0&&positions.TryGetValue(editedTaskId,out newIndex))return offset+(newIndex-preferred)*rowHeight;
+   for(int i=first;i<end;i++){
+    if(positions.TryGetValue(before[i].Id,out newIndex))return offset+(newIndex-i)*rowHeight;
+   }
+   return offset;
+  }
+
+  internal void ApplySchedule(AppData data,List<TaskItem> tasks,DateTime start,Point offset,string editedTaskId){
+   var previousOrder=Chart.Ordered();
+   Chart.Data=data;
+   Chart.Tasks=tasks;
+   Chart.Start=start;
+   double vertical=PreservedVerticalOffset(previousOrder,Chart.Ordered(),offset.Y,editedTaskId);
+   Chart.SetSelectedTasks(Chart.SelectedTaskIds);
+   Chart.ResizeToContent();
+   Scroll.ScrollToHorizontalOffset(offset.X);
+   Scroll.ScrollToVerticalOffset(Math.Max(0,vertical));
+   Scroll.UpdateLayout();
+   UpdateHeader();
+   Notify();
+  }
+
   internal void WheelOverHeader(int delta,ModifierKeys modifiers,double mouseX){if(!HandleWheel(delta,modifiers,mouseX)){double lines=SystemParameters.WheelScrollLines,step=lines<0?Scroll.ViewportHeight:lines*16;Scroll.ScrollToVerticalOffset(Scroll.VerticalOffset-delta/120.0*step);}}
   internal bool HandleWheel(int delta,ModifierKeys modifiers,double mouseX){if(Chart.IsPointerActive)return true;if((modifiers&ModifierKeys.Shift)==0||delta==0)return false;SetZoom(Zoom*Math.Pow(1.15,delta/120.0),mouseX);return true;}
   internal void SetZoom(double value,double mouseX){

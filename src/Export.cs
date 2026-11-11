@@ -14,22 +14,24 @@ using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 
 namespace LaoQin.ProgressManager {
- public class ChartPage {public DateTime Start;public int Days;public List<TaskItem> Tasks;public bool IncludeDetails,GroupPeople=true;public double Width,TimelineWidth;}
+ public class ChartPage {public DateTime Start;public int Days;public List<TaskItem> Tasks;public bool IncludeDetails,GroupPeople=true;public double Width,TimelineWidth;internal ISet<string> TimelineTypes;}
  public static class Exporter {
   static int DateSpan(DateTime start,DateTime end){if(start.Date>end.Date)throw new InvalidOperationException("导出范围不正确。");int span=(end.Date-start.Date).Days+1;if(span>3660)throw new InvalidOperationException("导出范围超过十年，请缩小日期范围。");return span;}
   // 直接保留当前图表的任务行、分组和列宽，不重新筛选日期或套用打印布局。
-  public static ChartPage CurrentView(GanttView view){return Chart(view.Ordered(),view.Start,view.Start.AddDays(view.Days-1),view.ShowDetails,view.GroupPeople,view.TimelineWidth);}
-  public static ChartPage Chart(List<TaskItem> tasks,DateTime start,DateTime end,bool includeDetails=false,bool groupPeople=true,double timelineWidth=0){
+  public static ChartPage CurrentView(GanttView view){return Chart(view.Ordered(),view.Start,view.Start.AddDays(view.Days-1),view.ShowDetails,view.GroupPeople,view.TimelineWidth,view.TimelineTypes);}
+  public static ChartPage Chart(List<TaskItem> tasks,DateTime start,DateTime end,bool includeDetails=false,bool groupPeople=true,double timelineWidth=0,IEnumerable<string> timelineTypes=null){
    int days=DateSpan(start,end);if(timelineWidth<=166)timelineWidth=166+days*66;
-   return new ChartPage{Start=start.Date,Days=days,Tasks=tasks.ToList(),IncludeDetails=includeDetails,GroupPeople=groupPeople,TimelineWidth=timelineWidth,Width=GanttView.RequiredWidth(tasks,start.Date,days,timelineWidth,includeDetails)};
+   var selectedTypes=includeDetails?TaskTimelineTypes.Select(timelineTypes):new HashSet<string>();
+   bool showDetails=selectedTypes.Count>0;
+   return new ChartPage{Start=start.Date,Days=days,Tasks=tasks.ToList(),IncludeDetails=showDetails,GroupPeople=groupPeople,TimelineWidth=timelineWidth,TimelineTypes=selectedTypes,Width=GanttView.RequiredWidth(tasks,start.Date,days,timelineWidth,showDetails)};
   }
-  public static double Height(ChartPage page){return GanttView.MeasureHeight(null,page.Tasks,page.Start,page.Days,page.Width,false,page.IncludeDetails);}
+  public static double Height(ChartPage page){return GanttView.MeasureHeight(null,page.Tasks,page.Start,page.Days,page.Width,false,page.IncludeDetails,page.TimelineTypes);}
   internal static double RasterScale(ChartPage page){
    double height=Height(page),scale=Math.Min(3,Math.Min(16000/page.Width,Math.Min(16000/height,Math.Sqrt(60000000/(page.Width*height)))));
    if(scale<1)throw new InvalidOperationException("当前甘特图过大，请缩小日期范围或减少显示的任务后再导出单个文件。");return scale;
   }
   public static BitmapSource Bitmap(AppData d,ChartPage page,double scale){
-   double width=page.Width,height=Height(page);var view=new GanttView(d,page.Tasks,page.Start,page.Days,page.GroupPeople,page.IncludeDetails);view.SetTimelineWidth(page.TimelineWidth);view.Width=width;view.Height=height;view.Measure(new Size(width,height));view.Arrange(new Rect(0,0,width,height));view.UpdateLayout();
+   double width=page.Width,height=Height(page);var view=new GanttView(d,page.Tasks,page.Start,page.Days,page.GroupPeople,page.IncludeDetails,page.TimelineTypes);view.SetTimelineWidth(page.TimelineWidth);view.Width=width;view.Height=height;view.Measure(new Size(width,height));view.Arrange(new Rect(0,0,width,height));view.UpdateLayout();
    var bitmap=new RenderTargetBitmap((int)Math.Ceiling(width*scale),(int)Math.Ceiling(height*scale),96*scale,96*scale,PixelFormats.Pbgra32);var background=new DrawingVisual();using(var context=background.RenderOpen())context.DrawRectangle(Brushes.White,null,new Rect(0,0,bitmap.PixelWidth/scale,bitmap.PixelHeight/scale));var visual=new ContainerVisual();visual.Children.Add(background);visual.Children.Add(view);bitmap.Render(visual);
    // 白底图表统一转为不透明 RGB，避免 PNG 透明通道往返时的颜色舍入。
    var opaque=new FormatConvertedBitmap(bitmap,PixelFormats.Rgb24,null,0);opaque.Freeze();return opaque;
@@ -62,8 +64,8 @@ namespace LaoQin.ProgressManager {
    var project=d.Projects.First(x=>x.Id==projectId);var root=new XElement("LaoQinProject",new XAttribute("schemaVersion","1"),new XAttribute("exportedAt",DateTimeOffset.Now.ToString("o")),new XAttribute("dateConvention","inclusive-calendar-days"),new XElement("Project",new XAttribute("id",project.Id),new XElement("Name",project.Name)));
    var people=new XElement("People");foreach(var p in d.People)people.Add(new XElement("Person",new XAttribute("id",p.Id),new XAttribute("deleted",p.Deleted),new XElement("Name",p.Name)));root.Add(people);
    var tasks=new XElement("Tasks");foreach(var t in (selectedTasks??d.Tasks).Where(x=>x.ProjectId==projectId)){
-    var node=new XElement("Task",new XAttribute("id",t.Id),new XElement("Name",t.Name),new XElement("Status",t.Status),new XElement("Priority",t.Priority),new XElement("PersonId",t.PersonId??""),new XElement("PersonName",Model.PersonName(d,t.PersonId)),new XElement("Start",t.Start??""),new XElement("End",t.End??""),new XElement("InCurrentGantt",Model.IsCurrentGanttTask(t)),new XElement("Note",t.Note??""));
-    var history=new XElement("Timeline");foreach(var h in t.History)history.Add(new XElement("Change",new XAttribute("at",h.At??""),new XElement("Kind",h.Kind??""),new XElement("BeforeStatus",h.Before??""),new XElement("AfterStatus",h.After??""),new XElement("Priority",h.Priority??""),new XElement("TaskName",h.Name??""),new XElement("PersonName",h.PersonName??""),new XElement("Start",h.Start??""),new XElement("End",h.End??""),new XElement("Detail",h.Detail??"")));node.Add(history);tasks.Add(node);
+    var node=new XElement("Task",new XAttribute("id",t.Id),new XElement("Name",t.Name),new XElement("Status",t.Status),new XElement("Priority",t.Priority),new XElement("PersonId",t.PersonId??""),new XElement("PersonName",Model.PersonName(d,t.PersonId)),new XElement("Start",t.Start??""),new XElement("End",t.End??""),new XElement("InCurrentGantt",Model.IsCurrentGanttTask(t)));
+    var history=new XElement("Timeline");foreach(var h in Model.TimelineEntries(t))history.Add(new XElement("Change",new XAttribute("at",h.At??""),new XElement("Kind",h.Kind??""),new XElement("BeforeStatus",h.Before??""),new XElement("AfterStatus",h.After??""),new XElement("Priority",h.Priority??""),new XElement("TaskName",h.Name??""),new XElement("PersonName",h.PersonName??""),new XElement("Start",h.Start??""),new XElement("End",h.End??""),new XElement("Detail",h.Detail??""),new XElement("Note",Model.DisplayNote(h))));node.Add(history);tasks.Add(node);
    }
    root.Add(tasks);using(var m=new MemoryStream()){new XDocument(new XDeclaration("1.0","utf-8",null),root).Save(m);Store.SafeOutput(path,m.ToArray());}
   }
