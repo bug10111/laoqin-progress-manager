@@ -4,9 +4,7 @@
 
 ## 环境与构建
 
-项目使用 C#、WPF 与 .NET Framework，目标框架为 4.6，AnyCPU 构建。运行和普通构建无需 Node.js、Python、浏览器、.NET SDK 或第三方 NuGet 包。
-
-`build.ps1` 使用 Windows Framework 目录中的 `csc.exe`，优先 64 位，不存在时回退到 32 位。传统格式的 `LaoQin.ProgressManager.csproj` 使用 `src/*.cs` 纳入所有源码。
+项目使用 C#、WPF 和 .NET 10。`build.ps1` 使用 .NET 10 SDK 发布 Windows x64 自包含单文件 EXE，内含运行时和 PostgreSQL 驱动。
 
 在允许本地脚本运行的 PowerShell 中进入仓库：
 
@@ -22,7 +20,7 @@
 .\release\local\LaoQinProgressManager.exe
 ```
 
-输出文件名为 `LaoQinProgressManager.exe`。脚本保留 UTF-8 BOM，以兼容 Windows PowerShell 5.1。部分系统会显示旧版 `FormattedText` 构造函数的弃用警告，当前保留该调用以兼容目标框架。
+输出文件名为 `LaoQinProgressManager.exe`。可以用 `-DotnetPath` 指定本机 .NET 10 SDK 的 `dotnet.exe`。
 
 ## 独立数据目录
 

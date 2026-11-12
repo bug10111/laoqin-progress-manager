@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -35,13 +36,19 @@ namespace LaoQin.ProgressManager {
    update();root.Children.Add(new ScrollViewer{Content=picker,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});w.Content=root;
    return w.ShowDialog()==true?result:null;
   }
-  public static void ExportTasks(Window owner,Store store,TaskQuery query){
+  internal static async Task ExportTasksAsync(Window owner,Store store,TaskQuery query){
    int count=query.Apply(store.Data).Count;if(count==0){MessageBox.Show(owner,"当前筛选条件下没有可导出的任务，请调整筛选条件。","导出任务 Excel",MessageBoxButton.OK,MessageBoxImage.Information);return;}
    TaskExportPreferences preferences=null;var columns=ChooseTaskExportColumns(owner,count,query.Summary(store.Data),store.Data.TaskExcelPreferences,p=>preferences=p);if(columns==null)return;
    var project=store.Data.Projects.First(p=>p.Id==query.ProjectId);
    var save=new SaveFileDialog{Title="保存任务 Excel",FileName=FileName(project.Name)+"-任务清单-"+DateTime.Now.ToString("yyyyMMdd-HHmmss"),Filter="Excel 工作簿 (*.xlsx)|*.xlsx",DefaultExt=".xlsx",AddExtension=true,OverwritePrompt=true};
    if(save.ShowDialog(owner)!=true)return;
-   Mouse.OverrideCursor=Cursors.Wait;try{TaskExcelExporter.Export(save.FileName,store.Data,query,columns,preferences.TimelineTypes);store.Commit(d=>d.TaskExcelPreferences=preferences);}finally{Mouse.OverrideCursor=null;}
+   Mouse.OverrideCursor=Cursors.Wait;
+   try{TaskExcelExporter.Export(save.FileName,store.Data,query,columns,preferences.TimelineTypes);}
+   finally{Mouse.OverrideCursor=null;}
+   try{await store.CommitAsync(d=>d.TaskExcelPreferences=preferences);}
+   catch(InvalidOperationException error){
+    throw new InvalidOperationException("Excel 已导出到：\n"+save.FileName+"\n导出偏好未保存。"+error.Message,error);
+   }
    MessageBox.Show(owner,"已导出 "+count+" 项任务、"+columns.Count+" 列。\n"+save.FileName,"导出完成",MessageBoxButton.OK,MessageBoxImage.Information);
   }
  }

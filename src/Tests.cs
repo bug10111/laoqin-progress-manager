@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 老秦进度管理软件贡献者
 
 using System;
@@ -43,7 +43,7 @@ namespace LaoQin.ProgressManager {
     Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],1," ")),"拒绝清空追加需求正文");
     Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],0,new string('长',Model.ChangeNoteMaxLength+1))),"拒绝超长时间线备注");
     Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],3,"不存在")),"拒绝编辑不存在的时间线节点");
-    Check(before.SequenceEqual(Store.Encode(store.Data))&&before.SequenceEqual(File.ReadAllBytes(store.FilePath)),"拒绝编辑后内存和本地文件均保持原内容");
+    Check(before.SequenceEqual(Store.Encode(store.Data))&&before.SequenceEqual(Store.Encode(LocalWorkspace.Read(store.FilePath))),"拒绝编辑后内存和本地文件均保持原内容");
    }
    using(var reopened=new Store(directory)){
     Check(Model.TimelineEntries(reopened.Data.Tasks[0])[1].Note=="第一行\n第二行"&&Model.TimelineEntries(reopened.Data.Tasks[1]).Single().Note=="更新旧版备注","重新打开工作区仍能读取修改后的多行备注与旧版备注");
@@ -124,7 +124,7 @@ namespace LaoQin.ProgressManager {
     Check(s.Data.Tasks[0].History[0].Kind=="退出本次排期","original exit recorded in timeline");
     Check(s.Data.Tasks.First(t=>t.Id==pendingId).History[0].Kind=="调整甘特图排期","selected tasks receive schedule history");
     Check(s.Data.Tasks.All(t=>t.History.All(h=>DateTimeOffset.Parse(h.At)!=default(DateTimeOffset))),"timestamps contain parseable offset and date-time");
-    byte[] before=Store.Encode(s.Data);Fails(()=>s.Commit(d=>Model.ReplaceSchedule(d,chosenId,new[]{pendingId},b,a,person)),"reject reversed date range");Check(before.SequenceEqual(Store.Encode(s.Data))&&before.SequenceEqual(File.ReadAllBytes(s.FilePath)),"rejected transaction leaves memory and disk unchanged");
+    byte[] before=Store.Encode(s.Data);Fails(()=>s.Commit(d=>Model.ReplaceSchedule(d,chosenId,new[]{pendingId},b,a,person)),"reject reversed date range");Check(before.SequenceEqual(Store.Encode(s.Data))&&before.SequenceEqual(Store.Encode(LocalWorkspace.Read(s.FilePath))),"rejected transaction leaves memory and disk unchanged");
     Fails(()=>s.Commit(d=>Model.ReplaceSchedule(d,chosenId,new string[0],a,b,person)),"reject empty task selection");
     Fails(()=>s.Commit(d=>{d.Tasks[0].Status="invalid";}),"reject unknown status");
     string backup=Path.Combine(folder,"完整备份.json");s.Backup(backup);s.Commit(d=>d.Tasks[0].Name="A < & B \" 中文任务");Check(s.Data.Tasks[0].Name.Contains("中文"),"unicode and XML-sensitive characters round-trip in JSON");s.Restore(backup);Check(s.Data.Tasks[0].Name=="知识库对接","complete backup restore");
@@ -138,15 +138,21 @@ namespace LaoQin.ProgressManager {
     s.Commit(d=>d.Tasks[0].Note="重启持久化验证");
    }
    using(var reopened=new Store(data)){Check(reopened.Data.Tasks[0].Note=="重启持久化验证","restart reloads persisted edits");Check(!reopened.Data.Tasks[0].InGantt,"excluded original remains excluded after restart");}
-   File.WriteAllText(Path.Combine(data,"data.json"),"damaged-json");using(var recovered=new Store(data)){Check(recovered.RecoveryMessage.Length>0,"recover corrupt primary from automatic backup");Check(Directory.GetFiles(data,"damaged-*.json").Length==1,"damaged file preserved for recovery");Check(Store.Decode(File.ReadAllBytes(Path.Combine(data,"data.json.bak"))).Tasks.Count==16,"recovery preserves usable backup");}
-   File.Delete(Path.Combine(data,"data.json"));using(var missing=new Store(data)){Check(missing.RecoveryMessage.Length>0&&missing.Data.Tasks.Count==16,"missing primary recovered without creating fresh data");}
+   string oldDamaged=Path.Combine(folder,"legacy-damaged"),oldMissing=Path.Combine(folder,"legacy-missing");
+   Directory.CreateDirectory(oldDamaged);Directory.CreateDirectory(oldMissing);
+   var legacyBackup=Store.Encode(LocalWorkspace.Read(Path.Combine(data,"workspace.sqlite3")));
+   File.WriteAllBytes(Path.Combine(oldDamaged,"data.json.bak"),legacyBackup);File.WriteAllBytes(Path.Combine(oldMissing,"data.json.bak"),legacyBackup);
+   File.WriteAllText(Path.Combine(oldDamaged,"data.json"),"damaged-json");
+   using(var recovered=new Store(oldDamaged)){Check(recovered.RecoveryMessage.Length>0&&recovered.Data.Tasks.Count==16,"migrate corrupt legacy JSON from its backup");Check(File.ReadAllText(Path.Combine(oldDamaged,"data.json"))=="damaged-json","legacy source stays intact");}
+   using(var missing=new Store(oldMissing)){Check(missing.RecoveryMessage.Length>0&&missing.Data.Tasks.Count==16,"migrate backup when legacy primary is missing");}
    string all=Path.Combine(folder,"全部数据.json"),sourceDir=Path.Combine(folder,"import-source"),targetDir=Path.Combine(folder,"import-target"),migratedDir=Path.Combine(folder,"migrated-data");byte[] sourceBytes;
    using(var source=new Store(sourceDir)){
-    source.Commit(d=>{var project=new Project{Id=Model.Id(),Name="第二个项目"};d.Projects.Add(project);d.CurrentProjectId=project.Id;d.People.Add(new Person{Id=Model.Id(),Name="历史人员",Deleted=true});var task=new TaskItem{Id=Model.Id(),ProjectId=project.Id,Name="额外项目任务",Status="待讨论",PersonId="",Start="",End="",Note="完整数据导入验证",InGantt=false};Model.Record(d,task,"创建任务","","跨电脑完整迁移");d.Tasks.Add(task);});source.Backup(all);sourceBytes=File.ReadAllBytes(source.FilePath);
+    source.Commit(d=>{var project=new Project{Id=Model.Id(),Name="第二个项目"};d.Projects.Add(project);d.CurrentProjectId=project.Id;d.People.Add(new Person{Id=Model.Id(),Name="历史人员",Deleted=true});var task=new TaskItem{Id=Model.Id(),ProjectId=project.Id,Name="额外项目任务",Status="待讨论",PersonId="",Start="",End="",Note="完整数据导入验证",InGantt=false};Model.Record(d,task,"创建任务","","跨电脑完整迁移");d.Tasks.Add(task);});source.Backup(all);sourceBytes=File.ReadAllBytes(all);
+    File.WriteAllBytes(Path.Combine(sourceDir,"data.json"),sourceBytes);
     using(var target=new Store(targetDir)){
      target.Commit(d=>d.Tasks[0].Name="目标电脑原有任务");string safety=target.ImportAll(all);
      Check(target.Data.Projects.Count==2&&target.Data.Tasks.Count==17,"full import includes tasks across every project");Check(target.Data.People.Count==5&&target.Data.People.Any(p=>p.Deleted),"full import preserves historical people records");Check(target.Data.Tasks.Sum(t=>t.History.Count)==17&&target.Data.Tasks.Count(t=>t.InGantt)==5,"full import preserves complete histories and active schedules");Check(target.Data.Projects.First(p=>p.Id==target.Data.CurrentProjectId).Name=="第二个项目","full import retains active project");Check(Store.Decode(File.ReadAllBytes(safety)).Tasks[0].Name=="目标电脑原有任务","import creates independent complete pre-import backup");Check(Store.Encode(target.Data).SequenceEqual(Store.Encode(source.Data)),"complete export-import round-trip preserves every serialized field");
-     string invalid=Path.Combine(folder,"invalid-import.json");File.WriteAllText(invalid,"not-json");byte[] unchanged=Store.Encode(target.Data);Fails(()=>target.ImportAll(invalid),"invalid full import rejected");Check(unchanged.SequenceEqual(Store.Encode(target.Data))&&unchanged.SequenceEqual(File.ReadAllBytes(target.FilePath)),"invalid import leaves current data untouched");
+     string invalid=Path.Combine(folder,"invalid-import.json");File.WriteAllText(invalid,"not-json");byte[] unchanged=Store.Encode(target.Data);Fails(()=>target.ImportAll(invalid),"invalid full import rejected");Check(unchanged.SequenceEqual(Store.Encode(target.Data))&&unchanged.SequenceEqual(Store.Encode(LocalWorkspace.Read(target.FilePath))),"invalid import leaves current data untouched");
     }
     Fails(()=>{using(var locked=new Store(migratedDir,sourceDir)){}},"legacy migration refuses a workspace still being edited");
    }
@@ -157,8 +163,8 @@ namespace LaoQin.ProgressManager {
    using(var zero=new Store(zeroDir)){
     string removed=zero.Data.CurrentProjectId;var removedTasks=new HashSet<string>(zero.Data.Tasks.Select(t=>t.Id));retainedId=Model.Id();string retainedTask=Model.Id();zero.Commit(d=>{d.Projects.Add(new Project{Id=retainedId,Name="保留项目"});var task=new TaskItem{Id=retainedTask,ProjectId=retainedId,Name="不能被误删的任务",Status="执行中",PersonId=d.People[0].Id,Start=Model.Date(DateTime.Today),End=Model.Date(DateTime.Today.AddDays(3)),InGantt=true,Note="跨项目删除隔离验证"};Model.Record(d,task,"创建任务","","");d.Tasks.Add(task);});
     zero.Commit(d=>Model.DeleteProject(d,removed));Check(zero.Data.Projects.Count==1&&!zero.Data.Tasks.Any(t=>removedTasks.Contains(t.Id)),"project deletion cascades to every owned task");Check(zero.Data.Tasks.Count==1&&zero.Data.Tasks[0].Id==retainedTask&&zero.Data.Tasks[0].InGantt&&zero.Data.Tasks[0].History.Count==1,"project deletion preserves other project schedules and histories");Check(zero.Data.CurrentProjectId==retainedId,"deleting current project selects a remaining project");Check(zero.Data.People.Count==4,"global shared people preserved after deleting a project");
-    Check(!Encoding.UTF8.GetString(File.ReadAllBytes(zero.FilePath)).Contains(removed),"deleted project and embedded data removed from current data file");Fails(()=>zero.Commit(d=>Model.DeleteProject(d,removed)),"reject deleting nonexistent project");
-    zero.Commit(d=>Model.DeleteProject(d,retainedId));Check(zero.Data.Projects.Count==0&&zero.Data.Tasks.Count==0&&String.IsNullOrEmpty(zero.Data.CurrentProjectId),"last project can be deleted with no orphan tasks or active project");Check(!Encoding.UTF8.GetString(File.ReadAllBytes(zero.FilePath)).Contains(retainedTask),"last project task schedule and timeline removed from current file");zero.Backup(emptyFile);Check(Store.Decode(File.ReadAllBytes(emptyFile)).Projects.Count==0,"zero-project complete export remains a valid file");
+    Check(!Encoding.UTF8.GetString(Store.Encode(LocalWorkspace.Read(zero.FilePath))).Contains(removed),"deleted project and embedded data removed from current data file");Fails(()=>zero.Commit(d=>Model.DeleteProject(d,removed)),"reject deleting nonexistent project");
+    zero.Commit(d=>Model.DeleteProject(d,retainedId));Check(zero.Data.Projects.Count==0&&zero.Data.Tasks.Count==0&&String.IsNullOrEmpty(zero.Data.CurrentProjectId),"last project can be deleted with no orphan tasks or active project");Check(!Encoding.UTF8.GetString(Store.Encode(LocalWorkspace.Read(zero.FilePath))).Contains(retainedTask),"last project task schedule and timeline removed from current file");zero.Backup(emptyFile);Check(Store.Decode(File.ReadAllBytes(emptyFile)).Projects.Count==0,"zero-project complete export remains a valid file");
    }
    using(var reopenedEmpty=new Store(zeroDir)){Check(reopenedEmpty.Data.Projects.Count==0&&reopenedEmpty.Data.Tasks.Count==0,"empty workspace persists after restart without reseeding sample");reopenedEmpty.Commit(d=>{var p=new Project{Id=Model.Id(),Name="从零重新开始"};d.Projects.Add(p);d.CurrentProjectId=p.Id;});Check(reopenedEmpty.Data.Projects.Count==1&&reopenedEmpty.Data.CurrentProjectId==reopenedEmpty.Data.Projects[0].Id,"new project can be added after all projects are removed");}
    using(var emptyImport=new Store(Path.Combine(folder,"empty-import-target"))){emptyImport.ImportAll(emptyFile);Check(emptyImport.Data.Projects.Count==0&&emptyImport.Data.Tasks.Count==0,"complete import accepts zero-project workspace");var bad=Store.Decode(Store.Encode(emptyImport.Data));var orphan=new TaskItem{Id=Model.Id(),ProjectId="missing",Name="孤立任务",Status="待讨论",PersonId="",Start="",End=""};Model.Record(bad,orphan,"创建任务","","");bad.Tasks.Add(orphan);Fails(()=>Model.Check(bad),"zero-project schema rejects orphan tasks");}

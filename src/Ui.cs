@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -30,7 +31,22 @@ namespace LaoQin.ProgressManager {
   }
   public static TextBlock Text(string s,double size=13,Brush color=null,bool bold=false){return new TextBlock{Text=s??"",FontSize=size,Foreground=color??Ink,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,VerticalAlignment=VerticalAlignment.Center,TextWrapping=TextWrapping.Wrap};}
   public static TextBlock Ellipsis(string s,double size=13,Brush color=null,bool bold=false){var t=Text(s,size,color,bold);t.TextWrapping=TextWrapping.NoWrap;t.TextTrimming=TextTrimming.CharacterEllipsis;t.ToolTip=s;return t;}
-  public static Button Button(string text,Action action,bool primary=false){var b=new Button{Content=text,Background=primary?Brand:Brushes.White,Foreground=primary?Brushes.White:Ink,BorderBrush=primary?Brand:Line,Margin=new Thickness(0),VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(b,text);b.Click+=(s,e)=>Try(action);return b;}
+  static Button MakeButton(string text,bool primary){var b=new Button{Content=text,Background=primary?Brand:Brushes.White,Foreground=primary?Brushes.White:Ink,BorderBrush=primary?Brand:Line,Margin=new Thickness(0),VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(b,text);return b;}
+  public static Button Button(string text,Action action,bool primary=false){var b=MakeButton(text,primary);b.Click+=(s,e)=>Try(action);return b;}
+  internal static Button ButtonAsync(string text,Window owner,Func<Task> action,bool primary=false){
+   var button=MakeButton(text,primary);
+   button.Click+=async (s,e)=>await TryAsync(owner,action);
+   return button;
+  }
+  internal static async Task TryAsync(Window owner,Func<Task> action){
+   if(!owner.IsEnabled)return;
+   owner.IsEnabled=false;
+   Exception failure=null;
+   try{await action();}
+   catch(Exception error){failure=error;}
+   finally{owner.IsEnabled=true;}
+   if(failure!=null)MessageBox.Show(failure.Message,"老秦",MessageBoxButton.OK,MessageBoxImage.Warning);
+  }
   public static void Try(Action a){try{a();}catch(Exception ex){MessageBox.Show(ex.Message,"老秦",MessageBoxButton.OK,MessageBoxImage.Warning);}}
   public static StackPanel Stack(bool horizontal=false){return new StackPanel{Orientation=horizontal?Orientation.Horizontal:Orientation.Vertical};}
   public static Border Card(UIElement child,double pad=16){return new Border{Child=child,Background=Brushes.White,BorderBrush=Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(9),Padding=new Thickness(pad)};}
@@ -80,25 +96,47 @@ namespace LaoQin.ProgressManager {
   }
  }
  public class EntityPicker:Grid {
-  Store store;Window owner;bool project;string current;Button button;Popup popup;Action<string> changed;bool manager;bool allowClear;
+  Store store;Window owner;bool project;string current;Button button;Popup popup;Func<string,Task> changed;bool manager;bool allowClear;
   public string SelectedId {get{return current;}}
-  public void AddNew(){Add();}
+  internal Task AddNewAsync(){return AddAsync();}
   internal FrameworkElement Preview(){Build();return (FrameworkElement)popup.Child;}
-  public EntityPicker(Store s,Window w,bool isProject,string selected,Action<string> onChanged,bool manageOnly=false,bool allowClear=false){store=s;owner=w;project=isProject;current=selected;changed=onChanged;manager=manageOnly;this.allowClear=allowClear&&!isProject&&!manageOnly;button=Ui.Button("",()=>{Build();popup.IsOpen=!popup.IsOpen;});button.HorizontalContentAlignment=HorizontalAlignment.Left;Children.Add(button);popup=Ui.Popup(button,new Grid(),285);Update();}
+  public EntityPicker(Store s,Window w,bool isProject,string selected,Func<string,Task> onChanged,bool manageOnly=false,bool allowClear=false){store=s;owner=w;project=isProject;current=selected;changed=onChanged;manager=manageOnly;this.allowClear=allowClear&&!isProject&&!manageOnly;button=Ui.Button("",()=>{Build();popup.IsOpen=!popup.IsOpen;});button.HorizontalContentAlignment=HorizontalAlignment.Left;Children.Add(button);popup=Ui.Popup(button,new Grid(),285);Update();}
   void Update(){string label=project?store.Data.Projects.Where(x=>x.Id==current).Select(x=>x.Name).FirstOrDefault():store.Data.People.Where(x=>x.Id==current).Select(x=>x.Name+(x.Deleted?"（已删除）":"")).FirstOrDefault();button.Content=manager?"♧  人员  ·  "+store.Data.People.Count(x=>!x.Deleted)+"   ⌄":(label??(project?(store.Data.Projects.Count==0?"暂无项目":"选择项目"):allowClear?"未分配":"选择负责人"))+"  ⌄";button.ToolTip=label;AutomationProperties.SetName(button,project?"项目下拉管理":manager?"人员下拉管理":"负责人下拉选择");}
   void Build(){
    var panel=Ui.Stack();var list=Ui.Stack();var items=project?store.Data.Projects.Select(x=>new Choice{Id=x.Id,Label=x.Name}).ToList():store.Data.People.Where(x=>!x.Deleted).Select(x=>new Choice{Id=x.Id,Label=x.Name}).ToList();
-   if(allowClear){var clear=Ui.Button("未分配（取消负责人）",()=>{current="";popup.IsOpen=false;Update();if(changed!=null)changed(current);});clear.HorizontalContentAlignment=HorizontalAlignment.Left;clear.BorderThickness=new Thickness(0);clear.Foreground=Ui.Muted;if(String.IsNullOrEmpty(current))clear.Background=Ui.BrandSoft;list.Children.Add(clear);}
-   foreach(var item in items){var local=item;var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(34)});var pick=Ui.Button(item.Label,()=>{current=local.Id;popup.IsOpen=false;Update();if(changed!=null)changed(current);});pick.HorizontalContentAlignment=HorizontalAlignment.Left;pick.BorderThickness=new Thickness(0);if(item.Id==current)pick.Background=Ui.BrandSoft;row.Children.Add(pick);var del=Ui.Button("×",()=>Delete(local.Id,local.Label));del.Padding=new Thickness(6);del.BorderThickness=new Thickness(0);del.ToolTip="删除"+item.Label;AutomationProperties.SetName(del,"删除"+item.Label);Grid.SetColumn(del,1);row.Children.Add(del);list.Children.Add(row);}
-   panel.Children.Add(new ScrollViewer{Content=list,MaxHeight=300,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});var add=Ui.Button("＋ 增加"+(project?"项目":"人员"),()=>Add());add.Margin=new Thickness(0,8,0,0);add.Foreground=Ui.Brand;panel.Children.Add(add);((Border)popup.Child).Child=panel;
+   if(allowClear){var clear=Ui.ButtonAsync("未分配（取消负责人）",owner,()=>PickAsync(""));clear.HorizontalContentAlignment=HorizontalAlignment.Left;clear.BorderThickness=new Thickness(0);clear.Foreground=Ui.Muted;if(String.IsNullOrEmpty(current))clear.Background=Ui.BrandSoft;list.Children.Add(clear);}
+   foreach(var item in items){var local=item;var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(34)});var pick=Ui.ButtonAsync(item.Label,owner,()=>PickAsync(local.Id));pick.HorizontalContentAlignment=HorizontalAlignment.Left;pick.BorderThickness=new Thickness(0);if(item.Id==current)pick.Background=Ui.BrandSoft;row.Children.Add(pick);var del=Ui.ButtonAsync("×",owner,()=>DeleteAsync(local.Id,local.Label));del.Padding=new Thickness(6);del.BorderThickness=new Thickness(0);del.ToolTip="删除"+item.Label;AutomationProperties.SetName(del,"删除"+item.Label);Grid.SetColumn(del,1);row.Children.Add(del);list.Children.Add(row);}
+   panel.Children.Add(new ScrollViewer{Content=list,MaxHeight=300,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});var add=Ui.ButtonAsync("＋ 增加"+(project?"项目":"人员"),owner,AddAsync);add.Margin=new Thickness(0,8,0,0);add.Foreground=Ui.Brand;panel.Children.Add(add);((Border)popup.Child).Child=panel;
   }
-  void Add(){popup.IsOpen=false;string name=Ui.Prompt(owner,"增加"+(project?"项目":"人员"),project?"项目名称":"人员姓名");if(name==null)return;string id=Model.Id();store.Commit(d=>{if(project){if(d.Projects.Any(x=>x.Name==name))throw new InvalidOperationException("项目名称已存在。");d.Projects.Add(new Project{Id=id,Name=name});d.CurrentProjectId=id;}else{if(d.People.Any(x=>!x.Deleted&&x.Name==name))throw new InvalidOperationException("人员姓名已存在。");d.People.Add(new Person{Id=id,Name=name});}});current=id;Update();if(changed!=null)changed(id);}
-  void Delete(string id,string name){
+  async Task PickAsync(string id){
+   popup.IsOpen=false;
+   if(changed!=null)await changed(id);
+   current=id;
+   Update();
+  }
+  async Task AddAsync(){
+   popup.IsOpen=false;
+   string name=Ui.Prompt(owner,"增加"+(project?"项目":"人员"),project?"项目名称":"人员姓名");
+   if(name==null)return;
+   string id=Model.Id();
+   await store.CommitAsync(d=>{
+    if(project){
+     if(d.Projects.Any(x=>x.Name==name))throw new InvalidOperationException("项目名称已存在。");
+     d.Projects.Add(new Project{Id=id,Name=name});
+     d.CurrentProjectId=id;
+    }else{
+     if(d.People.Any(x=>!x.Deleted&&x.Name==name))throw new InvalidOperationException("人员姓名已存在。");
+     d.People.Add(new Person{Id=id,Name=name});
+    }
+   });
+   await PickAsync(id);
+  }
+  async Task DeleteAsync(string id,string name){
    popup.IsOpen=false;int count=project?store.Data.Tasks.Count(t=>t.ProjectId==id):store.Data.Tasks.Count(t=>t.PersonId==id);
    string message=project?"删除项目“"+name+"”？\n该项目的全部 "+count+" 项任务、甘特图排期及时间线将一并清除。\n共享人员档案和独立备份文件会保留。允许删除最后一个项目。":"删除人员“"+name+"”？\n已关联的任务和时间线会保留该人员的记录。";
    if(MessageBox.Show(owner,message,"删除确认",MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;
-   store.Commit(d=>{if(project){Model.DeleteProject(d,id);}else{var p=d.People.First(x=>x.Id==id);p.Deleted=true;}});
-   if(current==id)current=project?store.Data.CurrentProjectId:"";Update();if(changed!=null)changed(current);
+   await store.CommitAsync(d=>{if(project){Model.DeleteProject(d,id);}else{var p=d.People.First(x=>x.Id==id);p.Deleted=true;}});
+   await PickAsync(current==id?(project?store.Data.CurrentProjectId:""):current);
   }
  }
 }

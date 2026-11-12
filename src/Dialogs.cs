@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -13,7 +14,13 @@ using Microsoft.Win32;
 namespace LaoQin.ProgressManager {
  public static partial class Dialogs {
   static string lastTaskStatus="待讨论",lastTaskPersonId="";
-  static void Footer(Panel p,Window w,Action save,string label="保存变更") {var row=Ui.Stack(true);row.Margin=new Thickness(0,22,0,0);row.HorizontalAlignment=HorizontalAlignment.Right;var cancel=Ui.Button("取消",()=>w.Close());cancel.Margin=new Thickness(0,0,8,0);row.Children.Add(cancel);row.Children.Add(Ui.Button(label,save,true));p.Children.Add(row);}
+  static void Footer(Panel p,Window w,Action save,string label="保存变更"){AddFooter(p,w,Ui.Button(label,save,true));}
+  static void FooterAsync(Panel p,Window w,Func<Task> save,string label="保存变更"){AddFooter(p,w,Ui.ButtonAsync(label,w,save,true));}
+  static void AddFooter(Panel p,Window w,Button save){
+   var row=Ui.Stack(true);row.Margin=new Thickness(0,22,0,0);row.HorizontalAlignment=HorizontalAlignment.Right;
+   var cancel=Ui.Button("取消",()=>w.Close());cancel.Margin=new Thickness(0,0,8,0);
+   row.Children.Add(cancel);row.Children.Add(save);p.Children.Add(row);
+  }
   internal static TextBox ChangeNoteBox(string label,double minHeight=72){
    var field=new TextBox{
     Name="ChangeNoteBox",
@@ -50,12 +57,12 @@ namespace LaoQin.ProgressManager {
     p.Children.Add(noteToggle);p.Children.Add(notePanel);
    }else changeNote=ChangeNoteField(p);
    var hint=Ui.Text(original==null?"备注随创建任务写入时间线。":"备注随本次变更写入时间线。",11,Ui.Muted);hint.Margin=new Thickness(0,8,0,0);p.Children.Add(hint);
-   Footer(p,w,()=>{
+   FooterAsync(p,w,async ()=>{
     string n=name.Text.Trim(),s=(string)status.SelectedItem,personId=person.SelectedId;
     string operationNote=noteToggle==null||noteToggle.IsChecked==true?changeNote.Text:null;var a=dates.Start;var b=dates.End;
     if(n.Length==0)throw new InvalidOperationException("请输入任务名称。");if(a.HasValue!=b.HasValue||(a.HasValue&&a>b))throw new InvalidOperationException("请填写正确、完整的起止日期。");
     if(s=="执行中"&&String.IsNullOrEmpty(personId))throw new InvalidOperationException("任务设为执行中时，必须选择负责人。");
-    store.Commit(d=>{
+    await store.CommitAsync(d=>{
      var t=d.Tasks.FirstOrDefault(x=>x.Id==id);bool created=t==null;
      if(created){t=new TaskItem{Id=Model.Id(),ProjectId=d.CurrentProjectId};d.Tasks.Add(t);}
      string before=t.Status,oldName=t.Name,oldRange=Model.Range(t),oldPerson=t.PersonId,oldPriority=t.Priority;
@@ -81,7 +88,7 @@ namespace LaoQin.ProgressManager {
    w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return w.ShowDialog()==true;
   }
   static Border InfoTile(string caption,string value){var panel=Ui.Stack();panel.Children.Add(Ui.Text(caption,11,Ui.Muted));var text=Ui.Text(value,13,null,true);text.Margin=new Thickness(0,5,0,0);panel.Children.Add(text);var tile=Ui.Card(panel,13);tile.Background=Ui.Bg;tile.BorderThickness=new Thickness(0);tile.Margin=new Thickness(0,0,8,8);return tile;}
-  static UIElement TimelineEntry(Change entry,bool last,List<Button> noteButtons,Action<string> saveNote){
+  static UIElement TimelineEntry(Window owner,Change entry,bool last,List<Button> noteButtons,Func<string,Task> saveNote){
    bool original=entry.Kind=="创建任务"||entry.Kind=="旧版备注";
    var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(22)});row.ColumnDefinitions.Add(new ColumnDefinition());
    row.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});row.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
@@ -91,7 +98,7 @@ namespace LaoQin.ProgressManager {
    var cardContent=Ui.Stack();
    var header=new DockPanel();
    Button editNote;
-   var body=ActivityContent(entry,noteButtons,saveNote,out editNote);
+   var body=ActivityContent(owner,entry,noteButtons,saveNote,out editNote);
    DockPanel.SetDock(editNote,Dock.Right);
    header.Children.Add(editNote);
    var tag=new Border{Child=Ui.Text(entry.Kind,11,original?Ui.Muted:Ui.Brand,true),Background=original?Ui.Side:Ui.BrandSoft,CornerRadius=new CornerRadius(4),Padding=new Thickness(7,3,7,3),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};
@@ -101,7 +108,7 @@ namespace LaoQin.ProgressManager {
    cardContent.Children.Add(body);
    var card=Ui.Card(cardContent,14);card.Margin=new Thickness(0,8,0,14);Grid.SetColumn(card,1);Grid.SetRow(card,1);row.Children.Add(card);return row;
   }
-  static StackPanel ActivityContent(Change h,List<Button> noteButtons,Action<string> saveNote,out Button editNote){
+  static StackPanel ActivityContent(Window owner,Change h,List<Button> noteButtons,Func<string,Task> saveNote,out Button editNote){
    var panel=Ui.Stack();string details=Model.TimelineDetails(h);
    if(details.Length>0)panel.Children.Add(Ui.Text(details,12,Ui.Muted));
    var notePanel=Ui.Stack();
@@ -134,9 +141,9 @@ namespace LaoQin.ProgressManager {
     var cancel=Ui.Button("取消",closeEditor);
     cancel.Margin=new Thickness(0,0,8,0);
     actions.Children.Add(cancel);
-    actions.Children.Add(Ui.Button("保存备注",()=>{
+    actions.Children.Add(Ui.ButtonAsync("保存备注",owner,async ()=>{
      if(field.Text==(h.Note??"")){closeEditor();return;}
-     saveNote(field.Text);
+     await saveNote(field.Text);
     }));
     editor.Children.Add(actions);
     notePanel.Children.Add(editor);
@@ -166,10 +173,10 @@ namespace LaoQin.ProgressManager {
    hint.Margin=new Thickness(0,8,0,0);
    p.Children.Add(hint);
    var footer=Ui.Stack();
-   Footer(footer,w,()=>{
+   FooterAsync(footer,w,async ()=>{
     string content=field.Text.Trim();
     if(content.Length==0)throw new InvalidOperationException("请输入"+label+"。");
-    store.Commit(d=>{
+    await store.CommitAsync(d=>{
      var current=d.Tasks.FirstOrDefault(t=>t.Id==id);
      if(current==null)throw new InvalidOperationException("任务不存在或已被删除。");
      Model.Record(d,current,kind,current.Status,"",content);
@@ -202,7 +209,12 @@ namespace LaoQin.ProgressManager {
     var actions=Ui.Stack(true);actions.HorizontalAlignment=HorizontalAlignment.Right;
     if(!timelineOnly){
      var add=Ui.Button("＋ 追加需求",()=>{if(AppendRequirement(w,store,id)){changed=true;reopen=true;w.Close();}},true);add.HorizontalAlignment=HorizontalAlignment.Left;Grid.SetColumn(add,0);footer.Children.Add(add);
-     var del=Ui.Button("删除任务",()=>{if(MessageBox.Show(w,"删除任务“"+t.Name+"”及其时间线？","删除确认",MessageBoxButton.OKCancel,MessageBoxImage.Warning)==MessageBoxResult.OK){store.Commit(d=>d.Tasks.RemoveAll(x=>x.Id==id));changed=true;w.Close();}});del.Foreground=Ui.Muted;del.Margin=new Thickness(0,0,8,0);actions.Children.Add(del);
+     var del=Ui.ButtonAsync("删除任务",w,async ()=>{
+      if(MessageBox.Show(w,"删除任务“"+t.Name+"”及其时间线？","删除确认",MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;
+      await store.CommitAsync(d=>d.Tasks.RemoveAll(x=>x.Id==id));
+      changed=true;
+      w.Close();
+     });del.Foreground=Ui.Muted;del.Margin=new Thickness(0,0,8,0);actions.Children.Add(del);
      var edit=Ui.Button("编辑任务",()=>{if(TaskEditor(w,store,id)){changed=true;w.Close();}});edit.Margin=new Thickness(0,0,8,0);actions.Children.Add(edit);
     }
     var content=Ui.Stack();
@@ -221,20 +233,20 @@ namespace LaoQin.ProgressManager {
 
       // 保持当前窗口打开，追加成功后定位到新记录。
       markChanged();
-      RenderTimeline(timeline,store,id,markChanged,appendNote);
+      RenderTimeline(w,timeline,store,id,markChanged,appendNote);
       scroll.ScrollToBottom();
      },true);
      appendNote.Margin=new Thickness(0,0,8,0);
      actions.Children.Add(appendNote);
     }
     actions.Children.Add(Ui.Button("关闭",()=>w.Close()));Grid.SetColumn(actions,1);footer.Children.Add(actions);main.Children.Add(footer);
-    RenderTimeline(timeline,store,id,markChanged,appendNote);
+    RenderTimeline(w,timeline,store,id,markChanged,appendNote);
     main.Children.Add(scroll);w.Content=main;w.ShowDialog();
    }while(reopen);
    return changed;
   }
 
-   static List<Button> RenderTimeline(Panel panel,Store store,string taskId,Action onSaved,Button appendNote){
+   static List<Button> RenderTimeline(Window owner,Panel panel,Store store,string taskId,Action onSaved,Button appendNote){
     var task=store.Data.Tasks.First(t=>t.Id==taskId);
     var history=Model.TimelineEntries(task);
     panel.Children.Clear();
@@ -245,14 +257,14 @@ namespace LaoQin.ProgressManager {
     var noteButtons=new List<Button>();
     for(int i=0;i<history.Count;i++){
      int position=i;
-     panel.Children.Add(TimelineEntry(history[i],i==history.Count-1,noteButtons,note=>{
-      store.Commit(d=>{
+     panel.Children.Add(TimelineEntry(owner,history[i],i==history.Count-1,noteButtons,async note=>{
+      await store.CommitAsync(d=>{
        var current=d.Tasks.FirstOrDefault(t=>t.Id==taskId);
        if(current==null)throw new InvalidOperationException("任务不存在或已被删除。");
        Model.EditTimelineNote(current,position,note);
       });
       onSaved();
-      var buttons=RenderTimeline(panel,store,taskId,onSaved,appendNote);
+      var buttons=RenderTimeline(owner,panel,store,taskId,onSaved,appendNote);
       // 保存后把键盘焦点放回原记录的操作，旧版备注清空时移到相邻记录。
       if(buttons.Count>0)buttons[Math.Min(position,buttons.Count-1)].Focus();
      }));
@@ -337,7 +349,16 @@ namespace LaoQin.ProgressManager {
    var person=new EntityPicker(store,w,false,original==null?"":original.PersonId,null);Ui.Label(p,"负责人",person);
    var dates=new DateRangePicker(original==null?Model.Date(DateTime.Today):original.Start,original==null?Model.Date(DateTime.Today.AddDays(4)):original.End);Ui.Label(p,"计划时间",dates);
    var hint=Ui.Card(Ui.Text("时间可清空，保存后选中任务退出当前排期；状态按上方选择保存，原计划会记录到时间线。未再次选中的原任务及其历史保留。",12,Ui.Muted),12);hint.Background=Ui.Bg;hint.BorderThickness=new Thickness(0);hint.Margin=new Thickness(0,18,0,0);p.Children.Add(hint);ScheduleResult result=null;
-   Footer(p,w,()=>{var a=dates.Start;var b=dates.End;if(a.HasValue!=b.HasValue)throw new InvalidOperationException("请填写完整的起止日期，或清空时间。");if(a.HasValue&&String.IsNullOrEmpty(person.SelectedId))throw new InvalidOperationException("请选择负责人。");var ids=new HashSet<string>(taskPicker.Selected);store.Commit(d=>Model.ReplaceSchedule(d,originalId,ids,a,b,person.SelectedId,priority.Override,targetStatus.Override));result=new ScheduleResult{Start=a,End=b,Statuses=new HashSet<string>(store.Data.Tasks.Where(t=>ids.Contains(t.Id)).Select(t=>t.Status))};w.DialogResult=true;},original==null?"加入甘特图":"保存并同步甘特图");w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();return result;
+   FooterAsync(p,w,async ()=>{
+    var a=dates.Start;var b=dates.End;
+    if(a.HasValue!=b.HasValue)throw new InvalidOperationException("请填写完整的起止日期，或清空时间。");
+    if(a.HasValue&&String.IsNullOrEmpty(person.SelectedId))throw new InvalidOperationException("请选择负责人。");
+    var ids=new HashSet<string>(taskPicker.Selected);
+    await store.CommitAsync(d=>Model.ReplaceSchedule(d,originalId,ids,a,b,person.SelectedId,priority.Override,targetStatus.Override));
+    result=new ScheduleResult{Start=a,End=b,Statuses=new HashSet<string>(store.Data.Tasks.Where(t=>ids.Contains(t.Id)).Select(t=>t.Status))};
+    w.DialogResult=true;
+   },original==null?"加入甘特图":"保存并同步甘特图");
+   w.Content=new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};w.ShowDialog();return result;
   }
  }
 }

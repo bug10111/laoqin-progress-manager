@@ -3,6 +3,8 @@
 /qa/
 /data.json
 /data.json.bak
+/workspace.sqlite3
+/workspace.sqlite3-*
 /backups/
 /damaged-*.json
 /error.log
@@ -17,3 +19,5 @@ Thumbs.db
 Desktop.ini
 /bin/
 /obj/
+/server/bin/
+/server/obj/

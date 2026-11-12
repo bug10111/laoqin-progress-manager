@@ -8,14 +8,17 @@ using System.Linq;
 using System.Runtime.Serialization;
 
 namespace LaoQin.ProgressManager {
- [DataContract] public class Project { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Example; }
- [DataContract] public class Person { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Deleted; }
+ [DataContract] public class Project { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Example; internal long? StorageOrder; internal Project Copy()=>(Project)MemberwiseClone(); }
+ [DataContract] public class Person { [DataMember] public string Id; [DataMember] public string Name; [DataMember] public bool Deleted; internal long? StorageOrder; internal Person Copy()=>(Person)MemberwiseClone(); }
  [DataContract] public class Change {
   [DataMember] public string Priority;
   [DataMember] public string At; [DataMember] public string Kind; [DataMember] public string Before; [DataMember] public string After;
   [DataMember] public string Name; [DataMember] public string PersonName; [DataMember] public string Start; [DataMember] public string End; [DataMember] public string Detail;
   /// <summary>操作时填写的备注；与自动生成的变更明细分开保存。</summary>
   [DataMember(EmitDefaultValue=false)] public string Note;
+  internal string StorageId;
+  internal long? StorageOrder;
+  internal Change Copy()=>(Change)MemberwiseClone();
   internal Change WithNote(string note,string detail){
    var entry=(Change)MemberwiseClone();entry.Note=note;entry.Detail=detail;return entry;
   }
@@ -27,6 +30,8 @@ namespace LaoQin.ProgressManager {
   // 仅用于兼容旧版数据。新备注保存到对应的时间线节点。
   [DataMember(EmitDefaultValue=false)] public string Note;
   [DataMember] public bool InGantt; [DataMember] public List<Change> History = new List<Change>();
+  internal long? StorageOrder;
+  internal TaskItem Copy(){var copy=(TaskItem)MemberwiseClone();copy.History=History.Select(entry=>entry.Copy()).ToList();return copy;}
  }
  [DataContract] public class AppData {
   [DataMember(EmitDefaultValue=false)] public TaskExportPreferences TaskExcelPreferences;
@@ -35,6 +40,13 @@ namespace LaoQin.ProgressManager {
   [DataMember] public List<Person> People = new List<Person>();
   [DataMember] public List<TaskItem> Tasks = new List<TaskItem>();
   [DataMember] public string CurrentProjectId;
+  internal string StoredCurrentProjectId;
+  internal bool HasStoredCurrentProjectId;
+  internal long? CloudGeneration;
+  internal AppData Copy()=>new AppData{
+   Version=Version,CurrentProjectId=CurrentProjectId,TaskExcelPreferences=TaskExcelPreferences?.Copy(),
+   Projects=Projects.Select(p=>p.Copy()).ToList(),People=People.Select(p=>p.Copy()).ToList(),Tasks=Tasks.Select(t=>t.Copy()).ToList()
+  };
  }
  public static class Model {
   internal const int ChangeNoteMaxLength=50000;
@@ -149,12 +161,15 @@ namespace LaoQin.ProgressManager {
    if(d.Projects.Any(x=>String.IsNullOrWhiteSpace(x.Id)||String.IsNullOrWhiteSpace(x.Name)) || d.Projects.Select(x=>x.Id).Distinct().Count()!=d.Projects.Count) throw new InvalidOperationException("项目数据不完整或重复。");
    if(d.People.Any(x=>String.IsNullOrWhiteSpace(x.Id)||String.IsNullOrWhiteSpace(x.Name)) || d.People.Select(x=>x.Id).Distinct().Count()!=d.People.Count) throw new InvalidOperationException("人员数据不完整或重复。");
    if(d.Tasks.Select(x=>x.Id).Distinct().Count()!=d.Tasks.Count) throw new InvalidOperationException("存在重复的任务标识。");
+   var projects=d.Projects.Select(p=>p.Id).ToHashSet();
+   var people=d.People.Select(p=>p.Id).ToHashSet();
    foreach(var t in d.Tasks) {
+    t.PersonId??="";
     if(String.IsNullOrEmpty(t.Priority))t.Priority="P0";
     if(!Priorities.Contains(t.Priority))throw new InvalidOperationException("任务优先级必须为 P0、P1、P2 或 P3。");
-    if(String.IsNullOrWhiteSpace(t.Id)||String.IsNullOrWhiteSpace(t.Name)||!d.Projects.Any(p=>p.Id==t.ProjectId)||!Statuses.Contains(t.Status)||t.History==null) throw new InvalidOperationException("任务数据不完整。");
+    if(String.IsNullOrWhiteSpace(t.Id)||String.IsNullOrWhiteSpace(t.Name)||!projects.Contains(t.ProjectId)||!Statuses.Contains(t.Status)||t.History==null) throw new InvalidOperationException("任务数据不完整。");
     foreach(var h in t.History){DateTimeOffset at;if(h==null||!DateTimeOffset.TryParse(h.At,out at)||!Statuses.Contains(h.After))throw new InvalidOperationException("任务时间线缺少有效的时间或状态。");ValidateChangeNote(h.Note);}
-    if(!String.IsNullOrEmpty(t.PersonId)&&!d.People.Any(p=>p.Id==t.PersonId)) throw new InvalidOperationException("任务负责人不存在。");
+    if(!String.IsNullOrEmpty(t.PersonId)&&!people.Contains(t.PersonId)) throw new InvalidOperationException("任务负责人不存在。");
     bool any=!String.IsNullOrEmpty(t.Start)||!String.IsNullOrEmpty(t.End);
     if(any&&(!IsDate(t.Start)||!IsDate(t.End)||Parse(t.Start)>Parse(t.End))) throw new InvalidOperationException("任务起止日期不正确。");
     if(t.Status=="执行中"&&String.IsNullOrEmpty(t.PersonId))throw new InvalidOperationException("执行中的任务必须有负责人。");

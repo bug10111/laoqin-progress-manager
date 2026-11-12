@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -12,11 +11,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 
 namespace LaoQin.ProgressManager {
- [DataContract] public sealed class TaskExportPreferences {
-  [DataMember] public List<string> Order;
-  [DataMember] public List<string> Selected;
-  /// <summary>所选时间线类型；旧版没有该字段时默认全部选中。</summary>
-  [DataMember(EmitDefaultValue=false)] public List<string> TimelineTypes;
+ public sealed partial class TaskExportPreferences {
   static readonly string TimelineFieldName=TaskExportField.Timeline.ToString();
 
   // 合并旧导出字段时沿用它们首次出现的位置和勾选状态。

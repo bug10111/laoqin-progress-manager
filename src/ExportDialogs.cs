@@ -45,10 +45,24 @@ namespace LaoQin.ProgressManager {
    },"导出文件");w.Content=p;w.ShowDialog();
   }
   public static void Backups(Window owner,Store store){
-   var w=Ui.Dialog(owner,"全部数据导入与导出",520);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text("全部数据导入与导出",21,null,true));Ui.Label(p,"本地数据目录",Ui.Text(store.DirectoryPath,12,Ui.Muted));var hint=Ui.Text("完整数据包含全部项目、人员（含历史人员记录）、任务、当前排期及所有状态时间线。导出 JSON 后可在另一台电脑离线导入。",12,Ui.Muted);hint.Margin=new Thickness(0,17,0,15);p.Children.Add(hint);var counts=Ui.Card(Ui.Text(store.Data.Projects.Count+" 个项目  ·  "+store.Data.People.Count+" 位人员  ·  "+store.Data.Tasks.Count+" 项任务\n"+store.Data.Tasks.Sum(t=>t.History.Count)+" 条时间线记录",12,Ui.Muted),12);counts.Background=Ui.Bg;counts.BorderThickness=new Thickness(0);counts.Margin=new Thickness(0,0,0,18);p.Children.Add(counts);
-   var backup=Ui.Button("导出全部数据",()=>{var save=new SaveFileDialog{Filter="老秦完整数据 (*.json)|*.json",FileName="老秦全部数据-"+DateTime.Now.ToString("yyyyMMdd-HHmmss"),AddExtension=true,OverwritePrompt=true};if(save.ShowDialog(w)==true){store.Backup(save.FileName);MessageBox.Show(w,"全部数据已导出，可在另一台电脑使用“导入全部数据”恢复。","老秦进度管理软件");}},true);p.Children.Add(backup);
-   var restore=Ui.Button("导入全部数据",()=>{var open=new OpenFileDialog{Filter="老秦完整数据或备份 (*.json;*.bak)|*.json;*.bak|所有文件 (*.*)|*.*"};if(open.ShowDialog(w)!=true)return;var incoming=Store.Decode(File.ReadAllBytes(open.FileName));if(MessageBox.Show(w,"即将导入 "+incoming.Projects.Count+" 个项目、"+incoming.People.Count+" 位人员、"+incoming.Tasks.Count+" 项任务及完整时间线。\n这将覆盖当前全部数据，导入前会自动保存一份完整备份。是否继续？","全部数据导入确认",MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;string safety=store.ImportAll(open.FileName);MessageBox.Show(w,"全部数据导入完成。\n原有数据已备份至：\n"+safety,"老秦进度管理软件");w.Close();var main=owner as MainWindow;if(main!=null)main.Refresh();});restore.Margin=new Thickness(0,11,0,11);p.Children.Add(restore);
-   p.Children.Add(Ui.Button("打开数据文件夹",()=>Process.Start(new ProcessStartInfo("explorer.exe",store.DirectoryPath){UseShellExecute=true})));var close=Ui.Button("关闭",()=>w.Close());close.Margin=new Thickness(0,22,0,0);p.Children.Add(close);w.Content=p;w.ShowDialog();
+   var w=Ui.Dialog(owner,"全部数据导入与导出",520);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text("全部数据导入与导出",21,null,true));Ui.Label(p,store.IsCloud?"云端工作区的本机备份目录":"本地数据目录",Ui.Text(store.DirectoryPath,12,Ui.Muted));var hint=Ui.Text("完整数据包含全部项目、人员（含历史人员记录）、任务、当前排期及所有状态时间线。JSON 可导入本地或云端工作区。",12,Ui.Muted);hint.Margin=new Thickness(0,17,0,15);p.Children.Add(hint);var counts=Ui.Card(Ui.Text(store.Data.Projects.Count+" 个项目  ·  "+store.Data.People.Count+" 位人员  ·  "+store.Data.Tasks.Count+" 项任务\n"+store.Data.Tasks.Sum(t=>t.History.Count)+" 条时间线记录",12,Ui.Muted),12);counts.Background=Ui.Bg;counts.BorderThickness=new Thickness(0);counts.Margin=new Thickness(0,0,0,18);p.Children.Add(counts);
+   var backup=Ui.ButtonAsync("导出全部数据",w,async ()=>{var save=new SaveFileDialog{Filter="老秦完整数据 (*.json)|*.json",FileName="老秦全部数据-"+DateTime.Now.ToString("yyyyMMdd-HHmmss"),AddExtension=true,OverwritePrompt=true};if(save.ShowDialog(w)==true){await store.BackupAsync(save.FileName);MessageBox.Show(w,"全部数据已导出，可在另一台电脑使用“导入全部数据”恢复。","老秦进度管理软件");}},true);p.Children.Add(backup);
+   var restore=Ui.ButtonAsync("导入全部数据",w,async ()=>{
+    var open=new OpenFileDialog{Filter="老秦完整数据或备份 (*.json;*.bak)|*.json;*.bak|所有文件 (*.*)|*.*"};
+    if(open.ShowDialog(w)!=true)return;
+    var incoming=Store.Decode(File.ReadAllBytes(open.FileName));
+    var destination=store.IsCloud?"当前云端工作区":"当前本地工作区";
+    if(MessageBox.Show(w,"即将导入 "+incoming.Projects.Count+" 个项目、"+incoming.People.Count+" 位人员、"+incoming.Tasks.Count+" 项任务及完整时间线。\n这将覆盖"+destination+"的全部数据，导入前会自动保存一份完整备份。是否继续？","全部数据导入确认",MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;
+    string safety=await store.ImportAllAsync(open.FileName);
+    MessageBox.Show(w,"全部数据导入完成。\n原有数据已备份至：\n"+safety,"老秦进度管理软件");
+    w.Close();
+    var main=owner as MainWindow;
+    if(main!=null)main.Refresh();
+   });restore.Margin=new Thickness(0,11,0,11);p.Children.Add(restore);
+   p.Children.Add(Ui.Button(store.IsCloud?"打开备份文件夹":"打开数据文件夹",()=>{
+    Directory.CreateDirectory(store.DirectoryPath);
+    Process.Start(new ProcessStartInfo("explorer.exe",store.DirectoryPath){UseShellExecute=true});
+   }));var close=Ui.Button("关闭",()=>w.Close());close.Margin=new Thickness(0,22,0,0);p.Children.Add(close);w.Content=p;w.ShowDialog();
   }
   public static void Help(Window owner,Store store){
    var w=Ui.Dialog(owner,"使用说明",520);var p=Ui.Stack();p.Margin=new Thickness(25);p.Children.Add(Ui.Text("老秦 · 离线项目与甘特图",21,null,true));

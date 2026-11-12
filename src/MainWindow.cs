@@ -3,9 +3,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,8 +20,10 @@ namespace LaoQin.ProgressManager {
   DateTime? listPlanStart,listPlanEnd;
   Action syncChartControls;
   TextBlock saveStatusText;
+  readonly Store localStore;
+  bool cloudActionsExpanded;
   Store store;Grid frame;Grid body;GanttViewport currentChartViewport;double chartZoom=1,chartHorizontalOffset,chartVerticalOffset;EntityPicker projectPicker;GanttView currentChart;MultiPicker timelineTypesPicker;Button ganttTabButton;double taskScrollOffset;bool gantt=true,groupPeople=true;string listSearch="";HashSet<string> listStatuses=new HashSet<string>(Model.Statuses),listPriorities=new HashSet<string>(Model.Priorities);int taskPage=1;const int TasksPerPage=20;HashSet<string> chartSelection=new HashSet<string>();HashSet<string> statusFilters=new HashSet<string>{"执行中"};DateTime viewStart=Model.Monday(DateTime.Today);int days=14;readonly HashSet<string> timelineTypes=new HashSet<string>();
-  public MainWindow(Store s){store=s;Title="老秦进度管理软件";Width=Math.Min(1380,SystemParameters.WorkArea.Width-60);Height=Math.Min(920,SystemParameters.WorkArea.Height-60);MinWidth=1040;MinHeight=720;WindowStartupLocation=WindowStartupLocation.CenterScreen;WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.CanResize;WindowChrome.SetWindowChrome(this,new WindowChrome{CaptionHeight=38,ResizeBorderThickness=new Thickness(6),GlassFrameThickness=new Thickness(0),CornerRadius=new CornerRadius(10)});PreviewKeyDown+=Key;Refresh();}
+  public MainWindow(Store s){store=localStore=s;Title="老秦进度管理软件";Width=Math.Min(1380,SystemParameters.WorkArea.Width-60);Height=Math.Min(920,SystemParameters.WorkArea.Height-60);MinWidth=1040;MinHeight=720;WindowStartupLocation=WindowStartupLocation.CenterScreen;WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.CanResize;WindowChrome.SetWindowChrome(this,new WindowChrome{CaptionHeight=38,ResizeBorderThickness=new Thickness(6),GlassFrameThickness=new Thickness(0),CornerRadius=new CornerRadius(10)});PreviewKeyDown+=Key;Closed+=(o,e)=>{if(store.IsCloud)store.Dispose();};Refresh();}
   string ProjectId {get{return store.Data.CurrentProjectId;}}
   List<TaskItem> ProjectTasks(){return store.Data.Tasks.Where(t=>t.ProjectId==ProjectId).ToList();}
   List<TaskItem> ChartTasks(){
@@ -42,22 +45,147 @@ namespace LaoQin.ProgressManager {
     timelineTypesPicker.SetSelected(timelineTypes);
    if(currentChart!=null)currentChart.SetTimelineTypes(timelineTypes);
   }
-  Button Nav(string label,Action click,bool active=false){var b=Ui.Button(label,click);b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,5,0,0);b.Padding=new Thickness(13,12,13,12);b.BorderThickness=new Thickness(0);b.Background=active?Ui.BrandSoft:Ui.Side;b.Foreground=active?Ui.Brand:Ui.Muted;return b;}
+  Button Nav(string label,Action click,bool active=false){return StyleNav(Ui.Button(label,click),active);}
+  static Button StyleNav(Button b,bool active){b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,5,0,0);b.Padding=new Thickness(13,12,13,12);b.BorderThickness=new Thickness(0);b.Background=active?Ui.BrandSoft:Ui.Side;b.Foreground=active?Ui.Brand:Ui.Muted;return b;}
+  Border BuildWorkspacePanel(){
+   var panel=Ui.Stack();
+   var heading=Ui.Text(store.IsCloud?"▣  云端工作区":"▣  本地工作区",12,null,true);
+
+   var status=Ui.Ellipsis(store.IsCloud?"管理员  "+CloudClient.Username:"● 离线可用 · 无需登录",11,Ui.Muted);
+   status.Margin=new Thickness(0,6,0,0);
+   if(store.IsCloud){
+    var actions=Ui.Stack();
+    if(store.WorkspaceReady)
+     AddWorkspaceAction(actions,Ui.ButtonAsync("刷新云端数据",this,RefreshCloudAsync));
+    AddWorkspaceAction(actions,Ui.ButtonAsync("迁移本机数据到云端",this,MigrateLocalAsync));
+    AddWorkspaceAction(actions,Ui.ButtonAsync("用云端数据覆盖本机",this,MigrateCloudToLocalAsync));
+    AddWorkspaceAction(actions,Ui.Button("修改管理员密码",()=>Dialogs.ChangeCloudPassword(this,store)));
+    AddWorkspaceAction(actions,Ui.Button("退出云端",LogoutCloud));
+
+    var arrow=Ui.Text("",14,Ui.Muted,true);
+    var header=new DockPanel();
+    DockPanel.SetDock(arrow,Dock.Right);
+    header.Children.Add(arrow);
+    header.Children.Add(heading);
+    var toggle=new Button{
+     Content=header,Padding=new Thickness(0),MinHeight=24,BorderThickness=new Thickness(0),
+     HorizontalContentAlignment=HorizontalAlignment.Stretch
+    };
+    toggle.Click+=(s,e)=>{cloudActionsExpanded=!cloudActionsExpanded;UpdateCloudActions();};
+    void UpdateCloudActions(){
+     actions.Visibility=cloudActionsExpanded?Visibility.Visible:Visibility.Collapsed;
+     arrow.Text=cloudActionsExpanded?"▾":"▸";
+     var label=cloudActionsExpanded?"折叠云端操作":"展开云端操作";
+     toggle.ToolTip=label;
+     AutomationProperties.SetName(toggle,label);
+    }
+    UpdateCloudActions();
+    panel.Children.Add(toggle);
+    panel.Children.Add(status);
+    panel.Children.Add(actions);
+   }else{
+    panel.Children.Add(heading);
+    panel.Children.Add(status);
+    panel.Children.Add(Ui.Text("数据保存在这台电脑",11,Ui.Muted));
+    var login=Ui.Button("登录云端工作区",OpenCloud);
+    login.Background=Ui.BrandSoft;
+    login.Foreground=Ui.Brand;
+    AddWorkspaceAction(panel,login);
+   }
+
+   var card=Ui.Card(panel,10);
+   card.Margin=new Thickness(13,0,13,14);
+   return card;
+  }
+  static void AddWorkspaceAction(StackPanel panel,Button button){
+   button.Padding=new Thickness(8,5,8,5);
+   button.Margin=new Thickness(0,6,0,0);
+   panel.Children.Add(button);
+  }
   public void Refresh(){
    if(currentChart!=null)exportTimelineWidth=currentChart.TimelineWidth;currentChart=null;currentChartViewport=null;timelineTypesPicker=null;ganttTabButton=null;syncChartControls=null;frame=new Grid();frame.RowDefinitions.Add(new RowDefinition{Height=new GridLength(38)});frame.RowDefinitions.Add(new RowDefinition());var outer=new Border{Child=frame,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Background=Ui.Bg};Content=outer;
-   var title=new DockPanel{Background=Brushes.White};var controls=Ui.Stack(true);WindowChrome.SetIsHitTestVisibleInChrome(controls,true);DockPanel.SetDock(controls,Dock.Right);foreach(var op in new[]{"—","□","×"}){string local=op;var b=Ui.Button(op,()=>{if(local=="—")WindowState=WindowState.Minimized;else if(local=="□")WindowState=WindowState==WindowState.Maximized?WindowState.Normal:WindowState.Maximized;else Close();});b.Width=43;b.Padding=new Thickness(0);b.BorderThickness=new Thickness(0);b.Foreground=Ui.Muted;controls.Children.Add(b);}title.Children.Add(controls);var tit=Ui.Text("≋   老秦进度管理软件     /     本地离线工作区",12,Ui.Muted);tit.Margin=new Thickness(16,0,0,0);title.Children.Add(tit);frame.Children.Add(title);
+   var title=new DockPanel{Background=Brushes.White};var controls=Ui.Stack(true);WindowChrome.SetIsHitTestVisibleInChrome(controls,true);DockPanel.SetDock(controls,Dock.Right);foreach(var op in new[]{"—","□","×"}){string local=op;var b=Ui.Button(op,()=>{if(local=="—")WindowState=WindowState.Minimized;else if(local=="□")WindowState=WindowState==WindowState.Maximized?WindowState.Normal:WindowState.Maximized;else Close();});b.Width=43;b.Padding=new Thickness(0);b.BorderThickness=new Thickness(0);b.Foreground=Ui.Muted;controls.Children.Add(b);}title.Children.Add(controls);var tit=Ui.Text("≋   老秦进度管理软件     /     "+(store.IsCloud?"云端工作区":"本地离线工作区"),12,Ui.Muted);tit.Margin=new Thickness(16,0,0,0);title.Children.Add(tit);frame.Children.Add(title);
    var shell=new Grid();Grid.SetRow(shell,1);shell.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(185)});shell.ColumnDefinitions.Add(new ColumnDefinition());frame.Children.Add(shell);
-   var sidebar=new DockPanel{Background=Ui.Side,Margin=new Thickness(0)};var localPanel=Ui.Stack();DockPanel.SetDock(localPanel,Dock.Bottom);localPanel.Margin=new Thickness(21,20,16,20);localPanel.Children.Add(Ui.Text("▣  本地工作区",12));var offline=Ui.Text("● 离线可用 · 无需登录",11,Ui.Muted);offline.Margin=new Thickness(0,7,0,0);localPanel.Children.Add(offline);localPanel.Children.Add(Ui.Text("数据保存在这台电脑",11,Ui.Muted));sidebar.Children.Add(localPanel);
+   var sidebar=new DockPanel{Background=Ui.Side};
+   var workspacePanel=BuildWorkspacePanel();
+   DockPanel.SetDock(workspacePanel,Dock.Bottom);
+   sidebar.Children.Add(workspacePanel);
    var nav=Ui.Stack();nav.Margin=new Thickness(13,25,13,0);var brand=Ui.Stack(true);var mark=Ui.Card(Ui.Text("≋",24,Brushes.White,true),4);mark.Width=34;mark.Height=34;mark.Background=Ui.Brand;mark.BorderThickness=new Thickness(0);brand.Children.Add(mark);var brandWords=Ui.Stack();brandWords.Margin=new Thickness(11,0,0,0);brandWords.Children.Add(Ui.Text("老秦",22,null,true));var eng=Ui.Text("进度管理",11,Ui.Muted);brandWords.Children.Add(eng);brand.Children.Add(brandWords);brand.Margin=new Thickness(8,0,0,27);nav.Children.Add(brand);
-   projectPicker=new EntityPicker(store,this,true,ProjectId,id=>{if(!String.IsNullOrEmpty(id))store.Commit(d=>d.CurrentProjectId=id);viewStart=Model.Monday(DateTime.Today);chartZoom=1;chartHorizontalOffset=0;chartVerticalOffset=0;chartSelection.Clear();taskPage=1;taskScrollOffset=0;Refresh();});nav.Children.Add(projectPicker);var workLabel=Ui.Text("工作空间",11,Ui.Muted);workLabel.Margin=new Thickness(10,25,0,5);nav.Children.Add(workLabel);nav.Children.Add(Nav("▤   任务与排期",()=>{gantt=true;Refresh();},true));var people=new EntityPicker(store,this,false,"",id=>Refresh(),true);people.Margin=new Thickness(0,10,0,0);nav.Children.Add(people);nav.Children.Add(Nav("▣   数据导入导出",()=>Dialogs.Backups(this,store)));nav.Children.Add(Nav("?   使用说明",()=>Dialogs.Help(this,store)));sidebar.Children.Add(nav);shell.Children.Add(sidebar);
+   projectPicker=new EntityPicker(store,this,true,ProjectId,SelectProjectAsync);
+   nav.Children.Add(projectPicker);var workLabel=Ui.Text("工作空间",11,Ui.Muted);workLabel.Margin=new Thickness(10,25,0,5);nav.Children.Add(workLabel);
+   nav.Children.Add(Nav("▤   任务与排期",()=>{gantt=true;Refresh();},true));
+   var people=new EntityPicker(store,this,false,"",id=>{Refresh();return Task.FromResult(0);},true);
+   people.Margin=new Thickness(0,10,0,0);people.IsEnabled=store.WorkspaceReady;nav.Children.Add(people);
+   var backup=Nav("▣   数据导入导出",()=>Dialogs.Backups(this,store));
+   backup.IsEnabled=store.WorkspaceReady;
+   nav.Children.Add(backup);
+   nav.Children.Add(Nav("?   使用说明",()=>Dialogs.Help(this,store)));sidebar.Children.Add(nav);shell.Children.Add(sidebar);
    var main=new Grid{Margin=new Thickness(28,23,28,0)};main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});main.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});main.RowDefinitions.Add(new RowDefinition());main.RowDefinitions.Add(new RowDefinition{Height=new GridLength(44)});Grid.SetColumn(main,1);shell.Children.Add(main);
    var project=store.Data.Projects.FirstOrDefault(x=>x.Id==ProjectId);var breadcrumb=Ui.Text("我的项目   ›   "+(project==null?"暂无项目":project.Name+(project.Example?"  · 示例项目":"")),12,Ui.Muted);breadcrumb.Margin=new Thickness(0,0,0,18);main.Children.Add(breadcrumb);
-   var head=new DockPanel{Margin=new Thickness(0,0,0,24)};var actions=Ui.Stack(true);DockPanel.SetDock(actions,Dock.Right);var exp=Ui.Button("↓ 导出甘特图",()=>Export());exp.IsEnabled=project!=null;exp.Margin=new Thickness(0,0,9,0);actions.Children.Add(exp);if(!gantt){var excel=Ui.Button("↓ 导出 Excel",()=>Dialogs.ExportTasks(this,store,CurrentTaskQuery()));excel.IsEnabled=project!=null;excel.Margin=new Thickness(0,0,9,0);actions.Children.Add(excel);}actions.Children.Add(Ui.Button(project==null?"＋ 新建项目":"＋ 新建任务",()=>NewTaskOrProject(),true));head.Children.Add(actions);var titles=Ui.Stack();titles.Children.Add(Ui.Text(project==null?"我的工作区":"项目排期",28,null,true));var sub=Ui.Text(project==null?"创建项目，开始安排任务与人员。":ProjectTasks().Count+" 项任务 · "+store.Data.People.Count(x=>!x.Deleted)+" 位成员，让进展清晰可见。",12,Ui.Muted);sub.Margin=new Thickness(0,6,0,0);titles.Children.Add(sub);head.Children.Add(titles);Grid.SetRow(head,1);main.Children.Add(head);
+   var head=new DockPanel{Margin=new Thickness(0,0,0,24)};var actions=Ui.Stack(true);DockPanel.SetDock(actions,Dock.Right);var exp=Ui.Button("↓ 导出甘特图",()=>Export());exp.IsEnabled=project!=null;exp.Margin=new Thickness(0,0,9,0);actions.Children.Add(exp);if(!gantt){var excel=Ui.ButtonAsync("↓ 导出 Excel",this,()=>Dialogs.ExportTasksAsync(this,store,CurrentTaskQuery()));excel.IsEnabled=project!=null;excel.Margin=new Thickness(0,0,9,0);actions.Children.Add(excel);}actions.Children.Add(Ui.ButtonAsync(project==null?"＋ 新建项目":"＋ 新建任务",this,NewTaskOrProjectAsync,true));head.Children.Add(actions);var titles=Ui.Stack();titles.Children.Add(Ui.Text(project==null?"我的工作区":"项目排期",28,null,true));var sub=Ui.Text(project==null?"创建项目，开始安排任务与人员。":ProjectTasks().Count+" 项任务 · "+store.Data.People.Count(x=>!x.Deleted)+" 位成员，让进展清晰可见。",12,Ui.Muted);sub.Margin=new Thickness(0,6,0,0);titles.Children.Add(sub);head.Children.Add(titles);Grid.SetRow(head,1);main.Children.Add(head);
    var tabs=new DockPanel{Margin=new Thickness(0,0,0,18)};var hint=Ui.Text(gantt?"每一次排期变化，都有记录":"通过操作栏查看时间线或编辑任务",11,Ui.Muted);hint.HorizontalAlignment=HorizontalAlignment.Right;DockPanel.SetDock(hint,Dock.Right);tabs.Children.Add(hint);var tabrow=Ui.Stack(true);var taskTab=Ui.Button("☷  任务列表  "+ProjectTasks().Count,()=>{gantt=false;Refresh();});ganttTabButton=Ui.Button("≡  甘特图  "+ChartTasks().Count,()=>{gantt=true;Refresh();});foreach(var b in new[]{taskTab,ganttTabButton}){b.Background=Ui.Bg;b.BorderThickness=new Thickness(0,0,0,3);b.BorderBrush=Ui.Line;b.Margin=new Thickness(0,0,17,0);b.Padding=new Thickness(0,8,0,12);}var active=gantt?ganttTabButton:taskTab;active.Foreground=Ui.Brand;active.BorderBrush=Ui.Brand;tabrow.Children.Add(taskTab);tabrow.Children.Add(ganttTabButton);tabs.Children.Add(tabrow);Grid.SetRow(tabs,2);main.Children.Add(tabs);
-   body=new Grid();Grid.SetRow(body,3);main.Children.Add(body);if(project==null)BuildNoProject();else if(gantt)BuildChart();else BuildTasks();
-   var footer=new DockPanel();Grid.SetRow(footer,4);main.Children.Add(footer);saveStatusText=Ui.Text("",11,Ui.Muted);UpdateSaveStatus();DockPanel.SetDock(saveStatusText,Dock.Right);footer.Children.Add(saveStatusText);footer.Children.Add(Ui.Text("▣  Windows 桌面版  ·  本地数据",11,Ui.Muted));
+   body=new Grid();Grid.SetRow(body,3);main.Children.Add(body);
+   if(project==null)BuildNoProject();
+   else if(gantt)BuildChart();
+   else BuildTasks();
+   var footer=new DockPanel();Grid.SetRow(footer,4);main.Children.Add(footer);saveStatusText=Ui.Text("",11,Ui.Muted);UpdateSaveStatus();DockPanel.SetDock(saveStatusText,Dock.Right);footer.Children.Add(saveStatusText);footer.Children.Add(Ui.Text("▣  Windows 桌面版  ·  "+(store.IsCloud?"云端数据":"本地数据"),11,Ui.Muted));
   }
-  void UpdateSaveStatus(){saveStatusText.Text="已自动保存  "+File.GetLastWriteTime(store.FilePath).ToString("HH:mm:ss");}
+  void UpdateSaveStatus(){
+   saveStatusText.Text=store.WorkspaceReady
+    ?(store.IsCloud?"云端数据时间  ":"已自动保存  ")+store.LastSavedAt.ToString("HH:mm:ss")
+    :"等待配置数据库";
+  }
+  void OpenCloud(){
+   var next=Dialogs.ConnectCloud(this,localStore.DirectoryPath);
+   if(next==null)return;
+   store=next;
+   cloudActionsExpanded=false;
+   ResetWorkspaceView();
+   Refresh();
+  }
+  async Task MigrateLocalAsync(){
+   if(!await Dialogs.MigrateCloudAsync(this,store,localStore))return;
+   ResetWorkspaceView();
+   Refresh();
+  }
+  async Task MigrateCloudToLocalAsync(){
+   await Dialogs.MigrateCloudToLocalAsync(this,store,localStore);
+  }
+  async Task RefreshCloudAsync(){
+   string previous=ProjectId;
+   await store.ReloadCloudAsync();
+   if(ProjectId!=previous)ResetWorkspaceView();
+   Refresh();
+  }
+  void LogoutCloud(){
+   var previous=store;
+   store=localStore;
+   previous.Dispose();
+   ResetWorkspaceView();
+   Refresh();
+  }
+  void ResetWorkspaceView(){
+   listSearch="";
+   listPlanStart=listPlanEnd=null;
+   listStatuses=new HashSet<string>(Model.Statuses);
+   listPriorities=new HashSet<string>(Model.Priorities);
+   statusFilters=new HashSet<string>{"执行中"};
+   timelineTypes.Clear();
+   ResetProjectView();
+  }
+  void ResetProjectView(){
+   viewStart=Model.Monday(DateTime.Today);
+   chartZoom=1;
+   chartHorizontalOffset=chartVerticalOffset=0;
+   chartSelection.Clear();
+   taskPage=1;
+   taskScrollOffset=0;
+  }
+  async Task SelectProjectAsync(string id){
+   if(!String.IsNullOrEmpty(id)&&id!=ProjectId)await store.CommitAsync(d=>d.CurrentProjectId=id);
+   ResetProjectView();
+   Refresh();
+  }
   void BuildChart(){
    body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.RowDefinitions.Add(new RowDefinition());body.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
    Action redraw=null;var tools=new DockPanel{Margin=new Thickness(0,0,0,12)};var right=Ui.Stack(true);DockPanel.SetDock(right,Dock.Right);
@@ -87,7 +215,7 @@ namespace LaoQin.ProgressManager {
    };
    syncChartControls();
    var prev=Ui.Button("‹",()=>SetChartRange(viewStart.AddDays(-Math.Min(7,(viewStart-DateTime.MinValue.Date).Days)),days));prev.Padding=new Thickness(11,5,11,5);dates.Children.Add(prev);var today=Ui.Button("今天",()=>SetChartRange(Model.Monday(DateTime.Today),days));today.Margin=new Thickness(5,0,5,0);today.Padding=new Thickness(9,5,9,5);dates.Children.Add(today);var next=Ui.Button("›",()=>SetChartRange(viewStart.AddDays(Math.Min(7,(DateTime.MaxValue.Date-viewStart).Days)),days));next.Padding=new Thickness(11,5,11,5);dates.Children.Add(next);tools.Children.Add(dates);body.Children.Add(tools);
-   var chart=new GanttView(store.Data,ChartTasks(),viewStart,days,groupPeople,timelineTypes.Count>0,timelineTypes);currentChart=chart;redraw=()=>{chart.Tasks=ChartTasks();chart.SetSelectedTasks(chartSelection);chart.ResizeToContent();};chart.TaskClicked=id=>Schedule(id);chart.SelectionChanged+=()=>{if(currentChart==chart)chartSelection=new HashSet<string>(chart.SelectedTaskIds);};chart.ScheduleDragged=changes=>{store.Commit(d=>Model.ApplyGanttDrags(d,changes));var first=changes.Min(c=>c.Start);if(changes.Max(c=>c.End)<viewStart||first>ChartEnd){viewStart=LimitChartStart(Model.Monday(first),days);chartHorizontalOffset=0;}Refresh();};var viewport=new GanttViewport(chart,chartZoom,chartHorizontalOffset,chartVerticalOffset);currentChartViewport=viewport;chart.SetSelectedTasks(chartSelection);viewport.Changed+=()=>{if(currentChartViewport!=viewport)return;chartZoom=viewport.Zoom;chartHorizontalOffset=viewport.Scroll.HorizontalOffset;chartVerticalOffset=viewport.Scroll.VerticalOffset;};var border=Ui.Card(viewport,0);Grid.SetRow(border,1);body.Children.Add(border);
+   var chart=new GanttView(store.Data,ChartTasks(),viewStart,days,groupPeople,timelineTypes.Count>0,timelineTypes);currentChart=chart;redraw=()=>{chart.Tasks=ChartTasks();chart.SetSelectedTasks(chartSelection);chart.ResizeToContent();};chart.TaskClicked=id=>Schedule(id);chart.SelectionChanged+=()=>{if(currentChart==chart)chartSelection=new HashSet<string>(chart.SelectedTaskIds);};chart.ScheduleDragged=async changes=>await Ui.TryAsync(this,()=>SaveGanttDragAsync(changes));var viewport=new GanttViewport(chart,chartZoom,chartHorizontalOffset,chartVerticalOffset);currentChartViewport=viewport;chart.SetSelectedTasks(chartSelection);viewport.Changed+=()=>{if(currentChartViewport!=viewport)return;chartZoom=viewport.Zoom;chartHorizontalOffset=viewport.Scroll.HorizontalOffset;chartVerticalOffset=viewport.Scroll.VerticalOffset;};var border=Ui.Card(viewport,0);Grid.SetRow(border,1);body.Children.Add(border);
    var bottom=new DockPanel{Margin=new Thickness(0,11,0,4)};
    var settings=Ui.Stack(true);DockPanel.SetDock(settings,Dock.Right);
    settings.Children.Add(dateRange);
@@ -130,7 +258,7 @@ namespace LaoQin.ProgressManager {
    RebuildBody();
    UpdateGanttTabCount();
   }
-  void BuildNoProject(){var p=Ui.Stack();p.VerticalAlignment=VerticalAlignment.Center;p.HorizontalAlignment=HorizontalAlignment.Center;p.MaxWidth=420;p.Margin=new Thickness(24);var icon=Ui.Text("▱",46,Ui.Brand);icon.HorizontalAlignment=HorizontalAlignment.Center;p.Children.Add(icon);var title=Ui.Text("还没有项目",23,null,true);title.HorizontalAlignment=HorizontalAlignment.Center;title.Margin=new Thickness(0,13,0,10);p.Children.Add(title);var note=Ui.Text("新建一个项目开始工作，或从左侧导入已有的全部数据。",13,Ui.Muted);note.TextAlignment=TextAlignment.Center;p.Children.Add(note);var add=Ui.Button("＋ 新建第一个项目",()=>projectPicker.AddNew(),true);add.HorizontalAlignment=HorizontalAlignment.Center;add.Margin=new Thickness(0,23,0,0);p.Children.Add(add);body.Children.Add(Ui.Card(p,0));}
+  void BuildNoProject(){var p=Ui.Stack();p.VerticalAlignment=VerticalAlignment.Center;p.HorizontalAlignment=HorizontalAlignment.Center;p.MaxWidth=420;p.Margin=new Thickness(24);var icon=Ui.Text("▱",46,Ui.Brand);icon.HorizontalAlignment=HorizontalAlignment.Center;p.Children.Add(icon);var title=Ui.Text("还没有项目",23,null,true);title.HorizontalAlignment=HorizontalAlignment.Center;title.Margin=new Thickness(0,13,0,10);p.Children.Add(title);var note=Ui.Text("新建一个项目开始工作，或从左侧导入已有的全部数据。",13,Ui.Muted);note.TextAlignment=TextAlignment.Center;p.Children.Add(note);var add=Ui.ButtonAsync("＋ 新建第一个项目",this,()=>projectPicker.AddNewAsync(),true);add.HorizontalAlignment=HorizontalAlignment.Center;add.Margin=new Thickness(0,23,0,0);p.Children.Add(add);body.Children.Add(Ui.Card(p,0));}
   void RebuildBody(){currentChart=null;currentChartViewport=null;syncChartControls=null;body.Children.Clear();body.RowDefinitions.Clear();if(store.Data.Projects.Count==0)BuildNoProject();else if(gantt)BuildChart();else BuildTasks();}
   Grid TaskRowGrid(){var g=new Grid();foreach(double w in new[]{39.0,13.0,20.0,13.0,15.0})g.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(w,GridUnitType.Star)});return g;}
   TaskQuery CurrentTaskQuery(){return new TaskQuery(ProjectId,listStatuses,listPriorities,listSearch,listPlanStart,listPlanEnd);}
@@ -161,7 +289,21 @@ namespace LaoQin.ProgressManager {
     pager.HorizontalAlignment=HorizontalAlignment.Right;pager.Margin=new Thickness(12,9,12,9);var pageInfo=Ui.Text("共 "+items.Count+" 项  ·  第 "+taskPage+" / "+pageCount+" 页",11,Ui.Muted);pageInfo.VerticalAlignment=VerticalAlignment.Center;pageInfo.Margin=new Thickness(0,0,10,0);pager.Children.Add(pageInfo);var previous=Ui.Button("上一页",()=>{if(taskPage>1){taskPage--;taskScrollOffset=0;renderResults();}});previous.IsEnabled=taskPage>1;previous.Padding=new Thickness(10,5,10,5);previous.Margin=new Thickness(0,0,6,0);pager.Children.Add(previous);var next=Ui.Button("下一页",()=>{if(taskPage<pageCount){taskPage++;taskScrollOffset=0;renderResults();}});next.IsEnabled=taskPage<pageCount;next.Padding=new Thickness(10,5,10,5);pager.Children.Add(next);
    };DockPanel.SetDock(pager,Dock.Bottom);dock.Children.Add(pager);double restoreOffset=taskScrollOffset;var taskScroll=new ScrollViewer{Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};taskScroll.ScrollChanged+=(s,e)=>taskScrollOffset=e.VerticalOffset;dock.Children.Add(taskScroll);taskScroll.Dispatcher.BeginInvoke(new Action(()=>taskScroll.ScrollToVerticalOffset(restoreOffset)),DispatcherPriority.Loaded);renderResults();var card=Ui.Card(dock,0);Grid.SetRow(card,1);body.Children.Add(card);
   }
-  void NewTaskOrProject(){if(store.Data.Projects.Count==0){projectPicker.AddNew();return;}if(Dialogs.TaskEditor(this,store,null)){taskPage=1;taskScrollOffset=0;}Refresh();}
+  async Task NewTaskOrProjectAsync(){
+   if(!store.WorkspaceReady)return;
+   if(store.Data.Projects.Count==0){await projectPicker.AddNewAsync();return;}
+   if(Dialogs.TaskEditor(this,store,null)){taskPage=1;taskScrollOffset=0;}
+   Refresh();
+  }
+  async Task SaveGanttDragAsync(List<GanttDateChange> changes){
+   await store.CommitAsync(d=>Model.ApplyGanttDrags(d,changes));
+   var first=changes.Min(c=>c.Start);
+   if(changes.Max(c=>c.End)<viewStart||first>ChartEnd){
+    viewStart=LimitChartStart(Model.Monday(first),days);
+    chartHorizontalOffset=0;
+   }
+   Refresh();
+  }
   void Schedule(string id){
    if(ProjectTasks().Count==0){MessageBox.Show(this,"当前项目还没有任务，请先新建任务。","老秦进度管理软件");return;}
    var viewport=currentChartViewport;
@@ -195,6 +337,10 @@ namespace LaoQin.ProgressManager {
    var listQuery=!gantt&&listPlanStart.HasValue?CurrentTaskQuery():null;
    Dialogs.Export(this,store,CaptureGanttExport(),listQuery);
   }
-  void Key(object sender,KeyEventArgs e){if((Keyboard.Modifiers&ModifierKeys.Control)==ModifierKeys.Control&&e.Key==System.Windows.Input.Key.N){NewTaskOrProject();e.Handled=true;}if((Keyboard.Modifiers&ModifierKeys.Control)==ModifierKeys.Control&&e.Key==System.Windows.Input.Key.E){Export();e.Handled=true;}}
+  async void Key(object sender,KeyEventArgs e){
+   if((Keyboard.Modifiers&ModifierKeys.Control)!=ModifierKeys.Control)return;
+   if(e.Key==System.Windows.Input.Key.N){e.Handled=true;await Ui.TryAsync(this,NewTaskOrProjectAsync);}
+   else if(e.Key==System.Windows.Input.Key.E){e.Handled=true;Export();}
+  }
  }
 }

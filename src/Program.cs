@@ -7,9 +7,11 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Reflection;
+using System.Runtime.Versioning;
 
 [assembly:AssemblyTitle("老秦进度管理软件")]
-[assembly:AssemblyDescription("离线项目、任务时间线与人员甘特图")]
+[assembly:AssemblyDescription("项目、任务时间线与人员甘特图")]
+[assembly:SupportedOSPlatform("windows")]
 [assembly:AssemblyProduct("老秦进度管理软件")]
 [assembly:AssemblyCompany("老秦")]
 [assembly:AssemblyCopyright("Copyright 2026 老秦进度管理软件贡献者")]

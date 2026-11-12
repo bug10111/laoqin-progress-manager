@@ -2,7 +2,9 @@
 
 面向 Windows 的离线项目、任务与人员排期工具。支持直接拖动甘特条调整时间、多人多任务一起移动，以及按筛选条件导出 Excel、PDF 和高清图片。
 
-**无需登录 · 无需服务器 · 本机保存 · C# / WPF · Apache-2.0**
+**本地离线工作区 · 可选云端工作区 · C# / WPF · Apache-2.0**
+
+需要跨电脑使用同一份数据时，在每台电脑的桌面端填写同一 PostgreSQL 的地址、端口、账号和密码。工作区数据库固定为 `laoqin`。参见[云端使用说明](docs/CLOUD_SETUP.md)。
 
 [使用手册](docs/USER_GUIDE.md) · [构建与验证](docs/DEVELOPMENT.md) · [更新记录](CHANGELOG.md) · [本次版本发布说明](docs/RELEASE_NOTES.md) · [发行页面](https://github.com/bug10111/laoqin-progress-manager/releases)
 
@@ -21,7 +23,7 @@
 | 排期编辑 | 多选任务，统一调整状态、优先级、负责人和日期，也可清空时间 |
 | Excel 导出 | 按筛选导出全部匹配任务，勾选字段、拖动表头排序、需求逐行展开 |
 | 甘特图导出 | 按当前视图导出单页 PDF、完整高清 PNG，或项目 XML |
-| 备份与迁移 | 自动保存、上一份数据备份、完整 JSON 导入导出及损坏恢复 |
+| 备份与迁移 | 完整 JSON 导入导出、本机与云端双向覆盖、覆盖前备份 |
 
 ## 快速开始
 
@@ -31,7 +33,7 @@
 4. 点击“安排现有任务”设置排期，或编辑已有任务的完整起止日期。甘特图默认显示“执行中”。
 5. 在甘特图上拖动调整时间，或从任务列表、甘特图右上角导出文件。
 
-面向 Windows 10 / Windows 11，目标框架为 .NET Framework 4.6，使用 WPF。已在 Windows 10 Pro 22H2 / .NET Framework 4.8 环境验证；Windows 11 尚未独立实机验证。程序不包含网络请求、遥测或在线更新，尚未签署商业代码签名证书。
+桌面端为 Windows x64 的单文件 WPF 程序，包含 .NET 运行时。本地工作区可离线使用，云端工作区直接连接配置的 PostgreSQL 数据库。
 
 ## 甘特图操作
 
@@ -87,24 +89,24 @@ PDF、PNG 直接沿用当前甘特图的日期范围、状态筛选、分组、�
 
 | 文件 | 作用 |
 | --- | --- |
-| `data.json` | 当前全部数据 |
-| `data.json.bak` | 上一次成功保存的数据 |
-| `backups/` | 完整导入前生成的独立备份 |
+| `workspace.sqlite3` | 本地工作区数据库，按项目、人员、任务、时间线和设置分表存放 |
+| `data.json` / `data.json.bak` | 旧版文件，首次迁移后保留 |
+| `backups/` | 完整导入或覆盖前生成的独立 JSON 备份 |
 | `damaged-*.json` | 恢复时保留的损坏文件 |
 | `workspace.lock` | 防止多个实例同时写入同一目录 |
 
-数据通过临时文件和原子替换保存。导入完整 JSON 会覆盖当前数据，并先保存独立备份；删除项目会清理其任务、排期和时间线，但保留共享人员与独立备份。自动备份只保留上一份数据，长期备份请手动导出完整 JSON。数据保存在本机且未加密。
+本地 SQLite 随 EXE 提供。数据修改在事务内保存，导入完整 JSON 会先备份当前数据，再覆盖工作区。需要长期备份时可手动导出完整 JSON，或退出应用后复制 `workspace.sqlite3`。本地工作区数据未加密。
 
 ## 从源码构建
 
-在 Windows PowerShell 中进入仓库执行，无需下载 NuGet 包或安装 .NET SDK：
+在安装了 .NET 10 SDK 的 Windows 上进入仓库执行：
 
 ```powershell
 .\build.ps1
 .\dist\LaoQinProgressManager.exe
 ```
 
-脚本使用 Windows Framework 目录中的 C# 编译器，输出 `dist/LaoQinProgressManager.exe`；可通过 `-OutputPath` 指定目录。程序集版本号为 `1.1.4.0`，发布标签和发行包以对应 Release 为准。
+脚本输出 `dist/LaoQinProgressManager.exe`。可通过 `-OutputPath` 指定目录。
 
 构建参数、独立数据目录、自检命令和源码结构见[开发文档](docs/DEVELOPMENT.md)。检查覆盖持久化、单条与批量拖动、筛选、日期联动、冻结栏、缩放及导出。
 
