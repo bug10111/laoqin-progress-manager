@@ -13,11 +13,48 @@ namespace LaoQin.ProgressManager {
   static List<string> passed=new List<string>();
   static void Check(bool value,string name){if(!value)throw new Exception("FAIL: "+name);passed.Add("PASS: "+name);}
   static void Fails(Action action,string name){bool failed=false;try{action();}catch{failed=true;}Check(failed,name);}
+  static void VerifyTimelineNoteEdits(string folder){
+   string directory=Path.Combine(folder,"timeline-note-store");
+   using(var store=new Store(directory)){
+    store.Commit(d=>{
+     var task=d.Tasks[0];
+     task.Note="旧版任务备注";
+     Model.Record(d,task,"需求追加",task.Status,"旧版追加正文");
+     Model.Record(d,task,"状态变更","待执行","自动变更明细","原备注");
+     // 两个历史节点可以同一时间写入，编辑仍按时间线中所选的位置定位。
+     task.History[0].At=task.History[1].At;
+     var legacy=d.Tasks[1];
+     legacy.History.Clear();
+     legacy.Note="单独的旧版备注";
+    });
+    var original=store.Data.Tasks[0];
+    var times=original.History.Select(h=>h.At).ToArray();
+    store.Commit(d=>{
+     var task=d.Tasks[0];
+     Model.EditTimelineNote(task,0,"更新创建备注");
+     Model.EditTimelineNote(task,1,"第一行\n第二行");
+     Model.EditTimelineNote(task,2,"  ");
+     Model.EditTimelineNote(d.Tasks[1],0,"更新旧版备注");
+    });
+    var updated=store.Data.Tasks[0];
+    var notes=Model.TimelineEntries(updated).Select(h=>h.Note);
+    Check(notes.SequenceEqual(new[]{"更新创建备注","第一行\n第二行",null})&&updated.History.Select(h=>h.At).SequenceEqual(times)&&updated.History[0].Detail=="自动变更明细"&&updated.History[1].Detail==""&&updated.Note==null,"原位修改时间线备注保留时间和自动明细，旧字段不会再次显示原正文");
+    byte[] before=Store.Encode(store.Data);
+    Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],1," ")),"拒绝清空追加需求正文");
+    Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],0,new string('长',Model.ChangeNoteMaxLength+1))),"拒绝超长时间线备注");
+    Fails(()=>store.Commit(d=>Model.EditTimelineNote(d.Tasks[0],3,"不存在")),"拒绝编辑不存在的时间线节点");
+    Check(before.SequenceEqual(Store.Encode(store.Data))&&before.SequenceEqual(File.ReadAllBytes(store.FilePath)),"拒绝编辑后内存和本地文件均保持原内容");
+   }
+   using(var reopened=new Store(directory)){
+    Check(Model.TimelineEntries(reopened.Data.Tasks[0])[1].Note=="第一行\n第二行"&&Model.TimelineEntries(reopened.Data.Tasks[1]).Single().Note=="更新旧版备注","重新打开工作区仍能读取修改后的多行备注与旧版备注");
+   }
+  }
   public static void Run(string folder){
    Directory.CreateDirectory(folder);string data=Path.Combine(folder,"local-data-"+Guid.NewGuid().ToString("N"));string originalId,chosenId,pendingId,originalStart;
    TaskExportTests.Run(folder,Check,Fails);
    GanttDragTests.Run(folder,Check,Fails);
    GanttExportTests.Run(folder,Check);
+   VerifyTimelineNoteEdits(folder);
    Func<string,string,string,string,TaskItem> sortTask=(name,status,priority,at)=>new TaskItem{Name=name,Status=status,Priority=priority,History=String.IsNullOrEmpty(at)?new List<Change>():new List<Change>{new Change{Kind="创建任务",At=at,After=status}}};
    var sortStatuses=new[]{"已关闭","已完成","已暂停","待讨论","待执行","测试中","执行中"}.Select(s=>sortTask(s,s,"P0","2026-10-20T09:00:00+08:00")).ToList();
    Check(Model.OrderTaskList(sortStatuses).Select(t=>t.Status).SequenceEqual(new[]{"执行中","测试中","待执行","待讨论","已暂停","已完成","已关闭"}),"列表优先执行中、其次测试中，其余状态按工作优先顺序显示");

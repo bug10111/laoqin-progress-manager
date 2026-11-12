@@ -61,15 +61,18 @@ namespace LaoQin.ProgressManager {
   public static string Range(TaskItem t) { return IsDate(t.Start) ? t.Start.Replace('-','.')+" — "+t.End.Replace('-','.') : "尚未安排"; }
   public static bool IsCurrentGanttTask(TaskItem t) { if(!IsDate(t.Start)||!IsDate(t.End))return false;if(t.InGantt||t.Status=="已完成")return true;if(String.IsNullOrEmpty(t.PersonId))return false;return !t.History.Any(h=>h.Kind=="退出本次排期"); }
   public static List<Change> Timeline(TaskItem t) { return t.History.AsEnumerable().Reverse().OrderBy(h=>DateTimeOffset.Parse(h.At)).ToList(); }
-  public static bool HasTimelineNotes(TaskItem t) { return !String.IsNullOrWhiteSpace(t.Note)||t.History.Any(h=>!String.IsNullOrWhiteSpace(h.Note)||(h.Kind=="需求追加"&&!String.IsNullOrWhiteSpace(h.Detail))); }
+  public static bool HasTimelineNotes(TaskItem t) { return !String.IsNullOrWhiteSpace(t.Note)||t.History.Any(h=>!String.IsNullOrWhiteSpace(h.Note)||UsesLegacyRequirementDetail(h)); }
   static bool HasLegacyNote(TaskItem t) { return !String.IsNullOrWhiteSpace(t.Note)&&!t.History.Any(h=>h.Kind=="创建任务"); }
   public static int TimelineNodeCount(TaskItem t) { return t.History.Count+(HasLegacyNote(t)?1:0); }
   public static string HistoryTime(Change h) { return String.IsNullOrEmpty(h.At)?"创建时间未记录":DateTimeOffset.Parse(h.At).LocalDateTime.ToString("yyyy-MM-dd HH:mm"); }
+  static bool UsesLegacyRequirementDetail(Change entry){
+   return entry.Kind=="需求追加"&&String.IsNullOrWhiteSpace(entry.Note)&&!String.IsNullOrWhiteSpace(entry.Detail);
+  }
   internal static List<Change> TimelineEntries(TaskItem task){
    var entries=Timeline(task);
    for(int i=0;i<entries.Count;i++){
     var entry=entries[i];
-    if(entry.Kind=="需求追加"&&String.IsNullOrWhiteSpace(entry.Note)&&!String.IsNullOrWhiteSpace(entry.Detail))
+    if(UsesLegacyRequirementDetail(entry))
      entries[i]=entry.WithNote(entry.Detail,"");
    }
    if(String.IsNullOrWhiteSpace(task.Note))return entries;
@@ -110,6 +113,24 @@ namespace LaoQin.ProgressManager {
   internal static string TimelineNoteLine(Change entry){return "备注："+DisplayNote(entry);}
   static void ValidateChangeNote(string note){
    if(note!=null&&note.Length>ChangeNoteMaxLength)throw new InvalidOperationException("变更备注不能超过 "+ChangeNoteMaxLength+" 个字符。");
+  }
+  internal static void EditTimelineNote(TaskItem task,int position,string note){
+   note=String.IsNullOrWhiteSpace(note)?null:note.Trim();
+   ValidateChangeNote(note);
+   if(position<0||position>=TimelineNodeCount(task))throw new InvalidOperationException("该时间线记录已不存在。");
+
+   // 没有创建节点的旧版备注仍保存到任务原有的备注字段。
+   bool hasLegacyNote=HasLegacyNote(task);
+   if(hasLegacyNote&&position==0){task.Note=note;return;}
+
+   var entries=Timeline(task);
+   var entry=entries[hasLegacyNote?position-1:position];
+   // 需求追加本身以补充内容为主体，沿用追加时的非空要求。
+   if(entry.Kind=="需求追加"&&note==null)throw new InvalidOperationException("请输入本次补充内容。");
+   // 编辑合并显示的备注时，清除对应旧字段，避免原文再次出现在时间线中。
+   if(entry==entries.Find(h=>h.Kind=="创建任务"))task.Note=null;
+   if(UsesLegacyRequirementDetail(entry))entry.Detail="";
+   entry.Note=note;
   }
   /// <summary>将操作、当前任务快照及可选备注加入时间线。</summary>
   /// <param name="d">包含负责人的工作区数据。</param>

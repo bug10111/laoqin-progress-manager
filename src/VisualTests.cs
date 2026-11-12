@@ -16,6 +16,12 @@ namespace LaoQin.ProgressManager {
  internal static class VisualTests {
   static IEnumerable<T> Children<T>(DependencyObject root)where T:DependencyObject{for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++){var c=VisualTreeHelper.GetChild(root,i);if(c is T)yield return (T)c;foreach(var d in Children<T>(c))yield return d;}}
   static void Save(FrameworkElement el,string path,bool arrange=false,double width=360){if(arrange){el.Measure(new Size(width,Double.PositiveInfinity));el.Arrange(new Rect(new Point(0,0),el.DesiredSize));}el.UpdateLayout();if(el.ActualWidth<1||el.ActualHeight<1)throw new Exception("Empty layout: "+path);var visual=new DrawingVisual();using(var dc=visual.RenderOpen()){dc.DrawRectangle(Brushes.White,null,new Rect(0,0,el.ActualWidth,el.ActualHeight));dc.DrawRectangle(new VisualBrush(el){Stretch=Stretch.None,AlignmentX=AlignmentX.Left,AlignmentY=AlignmentY.Top},null,new Rect(0,0,el.ActualWidth,el.ActualHeight));}var b=new RenderTargetBitmap((int)Math.Ceiling(el.ActualWidth),(int)Math.Ceiling(el.ActualHeight),96,96,PixelFormats.Pbgra32);b.Render(visual);Store.SafeOutput(path,Exporter.Image(b,false));}
+  static void VerifyExpandedNoteBox(TextBox field){
+   var lastLine=field.GetRectFromCharacterIndex(field.Text.Length-1);
+   if(!field.AcceptsReturn||field.VerticalScrollBarVisibility!=ScrollBarVisibility.Disabled||
+      field.ActualHeight<=field.MinHeight||lastLine.IsEmpty||lastLine.Bottom>field.ActualHeight)
+    throw new Exception("多行备注文本域未展开到最后一行");
+  }
   static List<string> Texts(DependencyObject root){return Children<TextBlock>(root).Select(t=>t.Text).ToList();}
   static Grid TaskRow(MainWindow main,string name){return Children<Grid>((DependencyObject)main.Content).First(g=>g.ColumnDefinitions.Count==5&&Texts(g).Contains(name));}
   static MultiPicker TaskFilter(MainWindow main,string name){return Children<MultiPicker>((DependencyObject)main.Content).Single(p=>p.Name==name);}
@@ -97,10 +103,10 @@ namespace LaoQin.ProgressManager {
    var task=store.Data.Tasks.Last();if(task.Priority!="P3"||Model.HasTimelineNotes(task)||task.History.Count!=1||task.History[0].Kind!="创建任务")throw new Exception("Creation without initial details was not recorded");
    Ui.TestDialogReady=w=>{Children<TextBox>((DependencyObject)w.Content).First().Text="新增验收要求：确认备案通过后再上线。";Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="追加到时间线").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};if(!Dialogs.AppendRequirement(main,store,task.Id))throw new Exception("Append requirement form did not save");
    task=store.Data.Tasks.First(t=>t.Id==task.Id);if(task.History.Count!=2||task.History[0].Note!="新增验收要求：确认备案通过后再上线。"||task.History[1].Note!=null)throw new Exception("追加内容应写入自己的备注，创建备注仍为空");
-   Ui.TestDialogReady=w=>{w.UpdateLayout();var texts=Texts((DependencyObject)w.Content);if(!texts.Contains("任务时间线 · 2 条")||!texts.Where(t=>t=="创建任务"||t=="需求追加").SequenceEqual(new[]{"创建任务","需求追加"})||!texts.Contains("备注："+task.History[0].Note)||!texts.Contains("备注：无"))throw new Exception("创建和追加应按顺序显示，未填写备注显示无");Save((FrameworkElement)w.Content,Path.Combine(folder,"创建与追加时间线.png"));w.Close();};Dialogs.Detail(main,store,task.Id);
+   Ui.TestDialogReady=w=>{w.UpdateLayout();var texts=Texts((DependencyObject)w.Content);if(!texts.Contains("任务时间线 · 2 条")||!texts.Where(t=>t=="创建任务"||t=="需求追加").SequenceEqual(new[]{"创建任务","需求追加"})||texts.Count(t=>t=="备注：")!=2||!texts.Contains(task.History[0].Note)||!texts.Contains("无"))throw new Exception("创建和追加应按顺序显示，备注正文另起一行，未填写备注显示无");Save((FrameworkElement)w.Content,Path.Combine(folder,"创建与追加时间线.png"));w.Close();};Dialogs.Detail(main,store,task.Id);
    Ui.TestDialogReady=w=>{Children<TextBox>((DependencyObject)w.Content).First().Text="含初始说明的新任务";Children<ComboBox>((DependencyObject)w.Content).First(x=>x.ItemsSource==Model.Statuses).SelectedItem="待讨论";Children<CheckBox>((DependencyObject)w.Content).First().IsChecked=true;Children<TextBox>((DependencyObject)w.Content).Skip(1).First().Text="初始需求：完成备案资料核验。";Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="创建任务").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};Dialogs.TaskEditor(main,store,null);task=store.Data.Tasks.Last();
    if(task.Note!=null||task.History.Single().Note!="初始需求：完成备案资料核验。")throw new Exception("勾选填写的备注未随创建任务节点保存");
-   Ui.TestDialogReady=w=>{w.UpdateLayout();var texts=Texts((DependencyObject)w.Content);if(!texts.Contains("任务时间线 · 1 条")||texts.Count(t=>t=="创建任务")!=1||texts.Count(t=>t=="备注：初始需求：完成备案资料核验。")!=1)throw new Exception("创建备注应在创建节点内展示一次");Save((FrameworkElement)w.Content,Path.Combine(folder,"创建与备注时间线.png"));w.Close();};Dialogs.Detail(main,store,task.Id);
+   Ui.TestDialogReady=w=>{w.UpdateLayout();var texts=Texts((DependencyObject)w.Content);if(!texts.Contains("任务时间线 · 1 条")||texts.Count(t=>t=="创建任务")!=1||texts.Count(t=>t=="初始需求：完成备案资料核验。")!=1)throw new Exception("创建备注应在创建节点内展示一次");Save((FrameworkElement)w.Content,Path.Combine(folder,"创建与备注时间线.png"));w.Close();};Dialogs.Detail(main,store,task.Id);
   }
   static void VerifyEditableNote(MainWindow main,Store store,string folder){
    string id=store.Data.Tasks.Last().Id;string originalNote=store.Data.Tasks.Last().History.Single().Note;int originalHistory=store.Data.Tasks.Last().History.Count;string changed="核对资料并更新验收要求。\n补充第二行说明。";
@@ -281,12 +287,11 @@ namespace LaoQin.ProgressManager {
    double horizontal=viewport.Scroll.HorizontalOffset,vertical=viewport.Scroll.VerticalOffset,zoom=viewport.Zoom;
    if(horizontal<=0||vertical<=0)throw new Exception("滚动位置验证需要非零的横纵偏移");
    Save((FrameworkElement)main.Content,Path.Combine(folder,"甘特图-改状态前位置.png"));
-   const string note="环境故障中断，已恢复并继续测试。";
    Ui.TestDialogReady=w=>{
     var target=Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="ScheduleStatus");
     var priority=Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="SchedulePriority");
     if((string)target.SelectedItem!=original.Status||(string)priority.SelectedItem!=original.Priority)throw new Exception("排期编辑未显示当前状态和优先级");
-    target.SelectedItem="测试中";Children<TextBox>((DependencyObject)w.Content).Single(t=>t.Name=="ChangeNoteBox").Text=note;w.UpdateLayout();Save((FrameworkElement)w.Content,Path.Combine(folder,"甘特图-修改任务状态.png"));Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="保存并同步甘特图").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    target.SelectedItem="测试中";w.UpdateLayout();Save((FrameworkElement)w.Content,Path.Combine(folder,"甘特图-修改任务状态.png"));Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="保存并同步甘特图").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
    };
    viewport.Chart.TaskClicked(id);layout();
    var updatedViewport=Children<GanttViewport>((DependencyObject)main.Content).Single();
@@ -294,15 +299,15 @@ namespace LaoQin.ProgressManager {
    if(updatedViewport.Chart.Start!=rangeStart||Math.Abs(updatedViewport.Scroll.HorizontalOffset-horizontal)>.1||Math.Abs(updatedViewport.Zoom-zoom)>.001||Math.Abs(newIndex*62-updatedViewport.Scroll.VerticalOffset-(oldIndex*62-vertical))>.1||!Object.ReferenceEquals(viewport,updatedViewport))
     throw new Exception("保存状态后甘特图跳动，日期 "+rangeStart.ToShortDateString()+" → "+updatedViewport.Chart.Start.ToShortDateString()+"，纵向偏移 "+vertical+" → "+updatedViewport.Scroll.VerticalOffset);
    Save((FrameworkElement)main.Content,Path.Combine(folder,"甘特图-改状态后位置.png"));
-   var task=store.Data.Tasks.Single(t=>t.Id==id);if(task.Status!="测试中"||!task.History.Any(h=>h.Kind=="状态变更"&&h.Before=="执行中"&&h.After=="测试中"&&h.Note==note)||!Children<GanttView>((DependencyObject)main.Content).Single().Tasks.Any(t=>t.Id==id&&t.Status=="测试中"))throw new Exception("甘特条点击后的状态修改、备注记录或筛选同步失败");
-   Ui.TestDialogReady=w=>{var content=(FrameworkElement)w.Content;Children<ScrollViewer>(content).First().ScrollToBottom();w.UpdateLayout();if(Texts(content).Count(t=>t=="备注："+note)!=1)throw new Exception("任务详情未在时间线中展示单条变更备注");Save(content,Path.Combine(folder,"任务详情-变更备注.png"));w.Close();};
+   var task=store.Data.Tasks.Single(t=>t.Id==id);if(task.Status!="测试中"||!task.History.Any(h=>h.Kind=="状态变更"&&h.Before=="执行中"&&h.After=="测试中"&&h.Note==null)||!Children<GanttView>((DependencyObject)main.Content).Single().Tasks.Any(t=>t.Id==id&&t.Status=="测试中"))throw new Exception("甘特条点击后的状态修改、时间线记录或筛选同步失败");
+   Ui.TestDialogReady=w=>{var content=(FrameworkElement)w.Content;Children<ScrollViewer>(content).First().ScrollToBottom();w.UpdateLayout();if(Texts(content).Count(t=>t=="状态：执行中 → 测试中")!=1)throw new Exception("任务详情未展示独立的状态变更记录");Save(content,Path.Combine(folder,"任务详情-状态变更.png"));w.Close();};
    Dialogs.Detail(main,store,id);
-   byte[] saved=Store.Encode(store.Data);Ui.TestDialogReady=w=>{Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="ScheduleStatus").SelectedItem="已完成";Children<TextBox>((DependencyObject)w.Content).Single(t=>t.Name=="ChangeNoteBox").Text="取消的备注";Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="取消").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
+   byte[] saved=Store.Encode(store.Data);Ui.TestDialogReady=w=>{Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="ScheduleStatus").SelectedItem="已完成";Children<Button>((DependencyObject)w.Content).First(b=>b.Content as string=="取消").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
    double afterVertical=updatedViewport.Scroll.VerticalOffset;
    updatedViewport.Chart.TaskClicked(id);layout();
    if(!saved.SequenceEqual(Store.Encode(store.Data))||!saved.SequenceEqual(File.ReadAllBytes(store.FilePath))||!Object.ReferenceEquals(updatedViewport,Children<GanttViewport>((DependencyObject)main.Content).Single())||Math.Abs(updatedViewport.Scroll.VerticalOffset-afterVertical)>.1)throw new Exception("取消排期状态修改后数据或视图发生变化");
    store.Commit(d=>d.Tasks.RemoveAll(t=>fixture.Contains(t.Id)));main.Height=windowHeight;main.Refresh();
-   File.WriteAllText(Path.Combine(folder,"甘特图-修改状态检查.txt"),"PASS: 编辑排期默认显示任务当前状态和优先级。\nPASS: 状态、筛选和备注同步，甘特图保留同一个视图、日期范围、缩放、横向位置和编辑行的屏幕位置。\nPASS: 取消编辑不写入状态或备注，视图也不跳动。\n");
+   File.WriteAllText(Path.Combine(folder,"甘特图-修改状态检查.txt"),"PASS: 编辑排期默认显示任务当前状态和优先级。\nPASS: 状态变更写入时间线，甘特图保留同一个视图、日期范围、缩放、横向位置和编辑行的屏幕位置。\nPASS: 取消编辑不写入状态，视图也不跳动。\n");
   }
   static void VerifyClearDates(MainWindow main,Store store,string folder){
    main.TestView(true);SetChartFilter(main,new[]{"执行中"});main.UpdateLayout();var original=store.Data.Tasks.First(t=>t.InGantt&&t.Status=="执行中");string id=original.Id,range=Model.Range(original);byte[] saved=Store.Encode(store.Data);
@@ -423,6 +428,55 @@ namespace LaoQin.ProgressManager {
      string firstStatus=store.Data.Tasks[1].Status,secondStatus=store.Data.Tasks[5].Status;
      Ui.TestDialogReady=w=>{
       w.UpdateLayout();Save((FrameworkElement)w.Content,Path.Combine(folder,"替换排期编辑.png"));
+      if(!Children<Button>((DependencyObject)w.Content).Single(b=>b.Content as string=="查看时间线").IsEnabled)throw new Exception("单选甘特任务应显示可用的查看时间线按钮");
+      if(Children<TextBox>((DependencyObject)w.Content).Any(t=>t.Name=="ChangeNoteBox"))throw new Exception("甘特图排期表单仍显示备注输入框");
+      Ui.TestDialogReady=timeline=>{
+       try{
+        var content=(FrameworkElement)timeline.Content;
+        timeline.UpdateLayout();
+        var buttons=Children<Button>(content).ToList();
+        var append=buttons.Single(b=>b.Content as string=="追加备注");
+        var close=buttons.Single(b=>b.Content as string=="关闭");
+        if(append.Parent!=close.Parent||append.TranslatePoint(new Point(),content).X>=close.TranslatePoint(new Point(),content).X)throw new Exception("追加备注应位于关闭按钮左侧");
+        var timelineScroll=Children<ScrollViewer>(content).First();
+        timelineScroll.ScrollToBottom();
+        Save(content,Path.Combine(folder,"甘特图-任务时间线.png"));
+        string draft=String.Join("\n",Enumerable.Range(1,16).Select(i=>i+". 核对任务进度、验收资料和待补充事项。"));
+        var editor=Dialogs.ChangeNoteBox("时间线备注");
+        editor.Text=draft;
+        var records=timelineScroll.Content;
+        var preview=Ui.Stack();
+        Ui.Label(preview,"备注：",editor);
+        try{
+         timelineScroll.Content=preview;
+         timeline.UpdateLayout();
+         Save(preview,Path.Combine(folder,"时间线-长备注文本域.png"));
+         VerifyExpandedNoteBox(editor);
+        }finally{timelineScroll.Content=records;}
+        Ui.TestDialogReady=note=>{
+         try{
+          var dialogContent=(FrameworkElement)note.Content;
+          var field=Children<TextBox>(dialogContent).Single();
+          field.Text=draft;
+          note.UpdateLayout();
+          Save(dialogContent,Path.Combine(folder,"甘特图-追加备注.png"));
+          VerifyExpandedNoteBox(field);
+
+          // 更长的内容只滚动弹窗内容区，底部操作始终可见。
+          field.Text=String.Join("\n",Enumerable.Repeat(draft,8));
+          note.UpdateLayout();
+          var scroll=Children<ScrollViewer>(dialogContent).First();
+          var save=Children<Button>(dialogContent).Single(b=>b.Content as string=="追加到时间线");
+          if(scroll.ScrollableHeight<=0||save.TranslatePoint(new Point(),dialogContent).Y+save.ActualHeight>dialogContent.ActualHeight)
+           throw new Exception("超长追加内容应由弹窗滚动且保留底部操作");
+         }
+         finally{note.Close();}
+        };
+        Dialogs.AppendTimelineText(timeline,store,store.Data.Tasks[0].Id,false);
+       }
+       finally{timeline.Close();}
+      };
+      Dialogs.Detail(w,store,store.Data.Tasks[0].Id,true);
       var picks=Children<MultiPicker>((DependencyObject)w.Content).ToList();if(picks.Count!=2)throw new Exception("Expected status and task multiselect controls");
       var status=Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="ScheduleStatus");
       var priority=Children<ComboBox>((DependencyObject)w.Content).Single(c=>c.Name=="SchedulePriority");

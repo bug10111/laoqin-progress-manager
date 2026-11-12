@@ -166,8 +166,16 @@ namespace LaoQin.ProgressManager {
    if(ProjectTasks().Count==0){MessageBox.Show(this,"当前项目还没有任务，请先新建任务。","老秦进度管理软件");return;}
    var viewport=currentChartViewport;
    var offset=new Point(viewport.Scroll.HorizontalOffset,viewport.Scroll.VerticalOffset);
+   var before=store.Data;
    var result=Dialogs.Schedule(this,store,id);
-   if(result==null)return;
+   if(result==null){
+    // 时间线备注可独立保存，取消排期后也要刷新甘特图中的详情。
+    if(before!=store.Data){
+     viewport.ApplySchedule(store.Data,ChartTasks(),viewStart,offset,null);
+     UpdateSaveStatus();
+    }
+    return;
+   }
 
    statusFilters.UnionWith(result.Statuses);
    // 仍与当前日期相交的排期沿用原来的时间轴，跨出范围时才定位到新日期。
